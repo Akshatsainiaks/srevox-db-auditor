@@ -1,0 +1,108 @@
+name: Build & Push Docker Images
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set version tag
+        id: version
+        run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Login to Docker Hub
+        continue-on-error: true
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & Push API
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/api
+          push: true
+          tags: |
+            ghcr.io/akshatsainiaks/srevox-api:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-api:${{ steps.version.outputs.tag }}
+
+      - name: Build & Push Worker
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/alert-worker
+          push: true
+          tags: |
+            ghcr.io/akshatsainiaks/srevox-worker:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-worker:${{ steps.version.outputs.tag }}
+
+      - name: Build & Push Frontend
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/frontend
+          push: true
+          tags: |
+            ghcr.io/akshatsainiaks/srevox-frontend:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-frontend:${{ steps.version.outputs.tag }}
+
+      - name: Build & Push AI Service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/backend
+          push: true
+          tags: |
+            ghcr.io/akshatsainiaks/srevox-ai:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-ai:${{ steps.version.outputs.tag }}
+
+      - name: Build & Push Activity Service
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/activity-service
+          push: true
+          tags: |
+            ghcr.io/akshatsainiaks/srevox-activity:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-activity:${{ steps.version.outputs.tag }}
+
+      - name: Build & Push Agent
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/watcher
+          push: true
+          tags: |
+            ghcr.io/akshatsainiaks/srevox-agent:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-agent:${{ steps.version.outputs.tag }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Create release in srevox-setup
+        uses: softprops/action-gh-release@v2
+        with:
+          repository: Akshatsainiaks/srevox-setup
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            New version ${{ github.ref_name }} released.
+
+            To update your self-hosted instance:
+            1. Edit your docker-compose.yml and change all image tags to ${{ github.ref_name }}
+            2. Run: docker compose pull
+            3. Run: docker compose up -d
+          token: ${{ secrets.DEPLOY_REPO_TOKEN }}

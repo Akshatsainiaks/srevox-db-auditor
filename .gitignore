@@ -1,0 +1,14 @@
+.env
+node_modules/
+dist/
+.next/
+__pycache__/
+*.pyc
+.env
+*.env
+.DS_Store
+*.bak
+.DS_Store
+**/.DS_Store
+**/target/
+**/Cargo.lock

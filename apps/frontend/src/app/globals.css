@@ -1,0 +1,214 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ── Anti-flash: set bg before JS loads ──────────────────────────────────── */
+html {
+  background-color: #f8fafc;
+}
+html.dark {
+  background-color: #0d0f17;
+  color-scheme: dark;
+}
+
+@layer base {
+  body {
+    @apply bg-slate-50 dark:bg-[#0d0f17] text-gray-900 dark:text-slate-100;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  /* All headings white in dark */
+  .dark h1, .dark h2, .dark h3, .dark h4, .dark h5, .dark h6 {
+    color: #f1f5f9;
+  }
+
+  /* Input/select/textarea always themed */
+  input:not([type="checkbox"]):not([type="radio"]),
+  textarea,
+  select {
+    color-scheme: inherit;
+  }
+}
+
+@layer components {
+  /* ── Buttons ─────────────────────────────────────────────────────────── */
+  .btn {
+    @apply inline-flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium
+           transition-all focus:outline-none focus:ring-2 focus:ring-offset-2
+           disabled:opacity-50 disabled:cursor-not-allowed;
+  }
+  .btn-primary {
+    @apply btn bg-indigo-600 text-white hover:bg-indigo-500
+           focus:ring-indigo-500 shadow-sm shadow-indigo-500/20;
+  }
+  .btn-secondary {
+    @apply btn bg-white dark:bg-slate-800 text-gray-700 dark:text-slate-200
+           border border-gray-200 dark:border-slate-700
+           hover:bg-gray-50 dark:hover:bg-slate-700 shadow-sm;
+  }
+  .btn-danger {
+    @apply btn bg-red-600 text-white hover:bg-red-500 focus:ring-red-500;
+  }
+  .btn-ghost {
+    @apply btn text-gray-600 dark:text-slate-400
+           hover:bg-gray-100 dark:hover:bg-slate-800;
+  }
+
+  /* ── Cards ───────────────────────────────────────────────────────────── */
+  .card {
+    @apply bg-white dark:bg-[#151823]
+           border border-gray-100 dark:border-slate-800/80
+           rounded-2xl shadow-sm;
+  }
+
+  /* ── Inputs ──────────────────────────────────────────────────────────── */
+  .input {
+    @apply block w-full rounded-xl
+           border border-gray-200 dark:border-slate-700
+           bg-white dark:bg-slate-800
+           text-gray-900 dark:text-slate-100
+           placeholder-gray-400 dark:placeholder-slate-500
+           px-3.5 py-2.5 text-sm
+           focus:border-indigo-400 dark:focus:border-indigo-500
+           focus:outline-none focus:ring-2
+           focus:ring-indigo-100 dark:focus:ring-indigo-500/20
+           transition-colors;
+  }
+
+  /* select needs explicit arrow color in dark */
+  select.input {
+    background-image: url("data:image/svg+xml,%3csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 20 20'%3e%3cpath stroke='%236b7280' stroke-linecap='round' stroke-linejoin='round' stroke-width='1.5' d='M6 8l4 4 4-4'/%3e%3c/svg%3e");
+    background-position: right 0.5rem center;
+    background-repeat: no-repeat;
+    background-size: 1.5em 1.5em;
+    padding-right: 2.5rem;
+    appearance: none;
+  }
+
+  .label {
+    @apply block text-sm font-medium text-gray-700 dark:text-slate-300 mb-1.5;
+  }
+
+  /* ── Badges ──────────────────────────────────────────────────────────── */
+  .badge {
+    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border;
+  }
+  .badge-critical {
+    @apply badge bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400
+           border-red-200 dark:border-red-500/20;
+  }
+  .badge-warning {
+    @apply badge bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400
+           border-amber-200 dark:border-amber-500/20;
+  }
+  .badge-info {
+    @apply badge bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400
+           border-blue-200 dark:border-blue-500/20;
+  }
+  .badge-open {
+    @apply badge bg-red-50 dark:bg-red-500/10 text-red-700 dark:text-red-400
+           border-red-100 dark:border-red-500/20;
+  }
+  .badge-ack {
+    @apply badge bg-amber-50 dark:bg-amber-500/10 text-amber-700 dark:text-amber-400
+           border-amber-100 dark:border-amber-500/20;
+  }
+  .badge-resolved {
+    @apply badge bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400
+           border-green-100 dark:border-green-500/20;
+  }
+
+  /* ── Misc ────────────────────────────────────────────────────────────── */
+  .section-tag {
+    @apply inline-flex items-center gap-1.5 px-3 py-1 rounded-full
+           bg-indigo-50 dark:bg-indigo-500/10
+           text-indigo-700 dark:text-indigo-400
+           text-xs font-semibold;
+  }
+  .gradient-text {
+    @apply bg-gradient-to-r from-indigo-600 to-violet-600 bg-clip-text text-transparent;
+  }
+  .divider {
+    @apply border-gray-100 dark:border-slate-800;
+  }
+  .text-muted {
+    @apply text-gray-500 dark:text-slate-400;
+  }
+  .text-subtle {
+    @apply text-gray-400 dark:text-slate-500;
+  }
+  .surface {
+    @apply bg-gray-50 dark:bg-slate-800/50;
+  }
+}
+/* ── Fix any remaining white bg in dark mode ─────────────────────────────── */
+.dark .bg-white {
+  background-color: #151823;
+}
+
+
+/* Landing page always light */
+.landing-page {
+  background: white !important;
+  color: #111827 !important;
+}
+
+/* Landing page — always light, ignore dark class */
+body:has(#landing-root) {
+  background: white !important;
+}
+
+/* Docs page theme — applied before JS via layout.tsx script */
+.docs-root { background: #ffffff; color: #111827; }
+.docs-root[data-theme="dark"] { background: #0d0f17; color: #f1f5f9; }
+.docs-root[data-theme="dark"] nav.docs-nav { background: #101218; border-color: #1e293b; }
+.docs-root[data-theme="dark"] aside.docs-sidebar { background: #101218; border-color: #1e293b; }
+.docs-root nav.docs-nav { background: #ffffff; border-color: #e5e7eb; }
+.docs-root aside.docs-sidebar { background: #f9fafb; border-color: #e5e7eb; }
+
+/* Docs theme CSS variables — defaults prevent flash */
+:root {
+  --docs-bg: #0d0f17;
+  --docs-side-bg: #101218;
+  --docs-nav-bg: #101218;
+  --docs-nav-bdr: #1e293b;
+  --docs-txt: #f1f5f9;
+  --docs-muted: #64748b;
+  --docs-bdr: #1e293b;
+  --docs-input-bg: #1e293b;
+  --docs-input-txt: #cbd5e1;
+}
+
+
+@keyframes srevoxFloat {
+  0% {
+    transform: translateY(0px) rotate(0deg);
+  }
+
+  25% {
+    transform: translateY(-6px) rotate(-2deg);
+  }
+
+  50% {
+    transform: translateY(-12px) rotate(0deg);
+  }
+
+  75% {
+    transform: translateY(-6px) rotate(2deg);
+  }
+
+  100% {
+    transform: translateY(0px) rotate(0deg);
+  }
+}
+
+.animate-srevoxFloat {
+  animation: srevoxFloat 5s ease-in-out infinite;
+}
+
+input[type="range"] {
+  --range-bg: #e2e8f0;
+}
+.dark input[type="range"] {
+  --range-bg: #1e293b;
+}

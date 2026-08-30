@@ -1,0 +1,211 @@
+# ═══════════════════════════════════════════════════════════════
+#  Srevox — Self-Hosted
+#  https://github.com/Akshatsainiaks/srevox-setup
+#
+#  Usage:
+#    curl -fsSL https://raw.githubusercontent.com/Akshatsainiaks/srevox-setup/main/setup.sh | bash
+# ═══════════════════════════════════════════════════════════════
+
+services:
+
+  postgres:
+    image: postgres:16-alpine
+    container_name: srevox-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB:       ${POSTGRES_DB:-srevox}
+      POSTGRES_USER:     ${POSTGRES_USER:-srevox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-srevox}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - srevox
+
+  redis:
+    image: redis:7-alpine
+    container_name: srevox-redis
+    restart: unless-stopped
+    command: redis-server --bind 0.0.0.0 --protected-mode no
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - srevox
+
+  api:
+    image: akshatsaini08/srevox-api:${SREVOX_VERSION:-latest}
+    build:
+      context: ./apps/api
+      dockerfile: Dockerfile
+    container_name: srevox-api
+    restart: unless-stopped
+    ports:
+      - "${API_PORT:-4000}:4000"
+    env_file: .env
+    environment:
+      POSTGRES_HOST:     ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT:     ${POSTGRES_PORT:-5432}
+      POSTGRES_DB:       ${POSTGRES_DB:-srevox}
+      POSTGRES_USER:     ${POSTGRES_USER:-srevox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL:     redis://redis:6379
+      AI_SERVICE_URL: http://ai:8000
+      ALERT_WORKER_URL: http://worker:3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - srevox
+
+  worker:
+    image: akshatsaini08/srevox-worker:${SREVOX_VERSION:-latest}
+    build:
+      context: ./apps/alert-worker
+      dockerfile: Dockerfile
+    container_name: srevox-worker
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      POSTGRES_HOST:     ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT:     ${POSTGRES_PORT:-5432}
+      POSTGRES_DB:       ${POSTGRES_DB:-srevox}
+      POSTGRES_USER:     ${POSTGRES_USER:-srevox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      REDIS_URL:     redis://redis:6379
+      AI_SERVICE_URL: http://ai:8000
+      ALERT_WORKER_URL: http://worker:3001
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - srevox
+
+  ai:
+    image: akshatsaini08/srevox-ai:${SREVOX_VERSION:-latest}
+    build:
+      context: ./apps/backend
+      dockerfile: Dockerfile
+    container_name: srevox-ai
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file: .env
+    environment:
+      POSTGRES_HOST:     ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT:     ${POSTGRES_PORT:-5432}
+      POSTGRES_DB:       ${POSTGRES_DB:-srevox}
+      POSTGRES_USER:     ${POSTGRES_USER:-srevox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - srevox
+
+  activity:
+    image: akshatsaini08/srevox-activity:${SREVOX_VERSION:-latest}
+    build:
+      context: ./apps/activity-service
+      dockerfile: Dockerfile
+    container_name: srevox-activity
+    restart: unless-stopped
+    ports:
+      - "${ACTIVITY_PORT:-5005}:5005"
+    env_file: .env
+    environment:
+      POSTGRES_HOST:     ${POSTGRES_HOST:-postgres}
+      POSTGRES_PORT:     ${POSTGRES_PORT:-5432}
+      POSTGRES_DB:       ${POSTGRES_DB:-srevox}
+      POSTGRES_USER:     ${POSTGRES_USER:-srevox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - srevox
+
+  frontend:
+    image: akshatsaini08/srevox-frontend:${SREVOX_VERSION:-latest}
+    container_name: srevox-frontend
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    env_file: .env
+    environment:
+      API_URL: http://api:4000
+      ACTIVITY_SERVICE_URL: http://activity:5005
+    depends_on:
+      - api
+      - activity
+    networks:
+      - srevox
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.3-alpine
+    container_name: srevox-clickhouse
+    restart: unless-stopped
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+    volumes:
+      - clickhouse_data:/var/lib/clickhouse
+      - ./infra/db-audit/02_clickhouse_schema.sql:/docker-entrypoint-initdb.d/02_clickhouse_schema.sql
+    networks:
+      - srevox
+
+  db-audit-control:
+    image: srevox-db-audit-control:latest
+    build:
+      context: ./apps/db-audit-control
+      dockerfile: Dockerfile
+    container_name: srevox-db-audit-control
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      POSTGRES_HOST: postgres
+      CLICKHOUSE_URL: http://clickhouse:8123
+    depends_on:
+      - postgres
+      - clickhouse
+    networks:
+      - srevox
+
+  db-audit-processor:
+    image: srevox-db-audit-processor:latest
+    build:
+      context: ./apps/db-audit-processor
+      dockerfile: Dockerfile
+    container_name: srevox-db-audit-processor
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_URL: http://clickhouse:8123
+    depends_on:
+      - clickhouse
+    networks:
+      - srevox
+
+volumes:
+  postgres_data:
+  redis_data:
+  clickhouse_data:
+
+networks:
+  srevox:
+    driver: bridge
