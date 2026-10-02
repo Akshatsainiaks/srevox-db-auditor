@@ -1,13 +1,13 @@
 # Build Stage
-FROM rust:1.77-alpine AS builder
-RUN apk add --no-gradient --no-cache musl-dev gcc
-WORKDIR /app
-COPY Cargo.toml ./
+FROM rust:1-slim AS builder
+WORKDIR /usr/src/db-audit-processor
+COPY Cargo.toml Cargo.lock* ./
 COPY src ./src
 RUN cargo build --release
 
 # Final Stage
-FROM alpine:3.19
+FROM debian:bookworm-slim
 WORKDIR /app
-COPY --from=builder /app/target/release/db-audit-processor .
+COPY --from=builder /usr/src/db-audit-processor/target/release/db-audit-processor .
+EXPOSE 7004
 CMD ["./db-audit-processor"]

@@ -121,7 +121,7 @@ services:
       - srevox-db-auditor
 
   db-audit-control:
-    image: srevox-db-auditor-control:latest
+    image: akshatsaini08/srevox-db-auditor-control:${SREVOX_VERSION:-latest}
     build:
       context: ./apps/db-audit-control
       dockerfile: Dockerfile
@@ -140,7 +140,7 @@ services:
       - srevox-db-auditor
 
   db-audit-processor:
-    image: srevox-db-auditor-processor:latest
+    image: akshatsaini08/srevox-db-auditor-processor:${SREVOX_VERSION:-latest}
     build:
       context: ./apps/db-audit-processor
       dockerfile: Dockerfile

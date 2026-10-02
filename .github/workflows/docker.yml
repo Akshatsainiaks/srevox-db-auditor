@@ -64,7 +64,7 @@ jobs:
             akshatsaini08/srevox-db-auditor-frontend:${{ steps.version.outputs.tag }}
             akshatsaini08/srevox-db-auditor-frontend:latest
 
-      # ── Build & Push Activity Service ──────────────────────────
+      # ── Build & Push Activity Service (Rust) ───────────────────
       - name: Build & Push Activity Service
         uses: docker/build-push-action@v5
         with:
@@ -75,6 +75,30 @@ jobs:
             ghcr.io/akshatsainiaks/srevox-db-auditor-activity:latest
             akshatsaini08/srevox-db-auditor-activity:${{ steps.version.outputs.tag }}
             akshatsaini08/srevox-db-auditor-activity:latest
+
+      # ── Build & Push DB Audit Control (Go) ─────────────────────
+      - name: Build & Push DB Audit Control
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/db-audit-control
+          push: true
+          tags: |
+            ghcr.io/akshatsainiaks/srevox-db-auditor-control:${{ steps.version.outputs.tag }}
+            ghcr.io/akshatsainiaks/srevox-db-auditor-control:latest
+            akshatsaini08/srevox-db-auditor-control:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-db-auditor-control:latest
+
+      # ── Build & Push DB Audit Processor (Rust) ─────────────────
+      - name: Build & Push DB Audit Processor
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/db-audit-processor
+          push: true
+          tags: |
+            ghcr.io/akshatsainiaks/srevox-db-auditor-processor:${{ steps.version.outputs.tag }}
+            ghcr.io/akshatsainiaks/srevox-db-auditor-processor:latest
+            akshatsaini08/srevox-db-auditor-processor:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-db-auditor-processor:latest
 
   release:
     needs: build
