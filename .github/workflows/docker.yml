@@ -20,7 +20,13 @@ jobs:
         id: version
         run: echo "tag=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
 
-      - name: Login to GitHub Container Registry
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to GitHub Container Registry (GHCR)
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
@@ -29,40 +35,74 @@ jobs:
 
       - name: Login to Docker Hub
         continue-on-error: true
+        id: dockerhub_login
         uses: docker/login-action@v3
         with:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Build & Push API
+      # ── Build & Push API ───────────────────────────────────────
+      - name: Build & Push API (GHCR)
         uses: docker/build-push-action@v5
         with:
           context: ./apps/api
           push: true
           tags: |
-            ghcr.io/akshatsainiaks/srevox-db-auditor-api:${{ steps.version.outputs.tag }}
-            akshatsaini08/srevox-db-auditor-api:${{ steps.version.outputs.tag }}
-            akshatsaini08/srevox-db-auditor-api:latest
+            ghcr.io/${{ github.repository_owner }}/srevox-db-auditor-api:${{ steps.version.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/srevox-db-auditor-api:latest
 
-      - name: Build & Push Frontend
+      - name: Push API to Docker Hub (if token authorized)
+        continue-on-error: true
+        if: steps.dockerhub_login.outcome == 'success'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/api
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME || 'akshatsaini08' }}/srevox-db-auditor-api:${{ steps.version.outputs.tag }}
+            ${{ secrets.DOCKERHUB_USERNAME || 'akshatsaini08' }}/srevox-db-auditor-api:latest
+
+      # ── Build & Push Frontend ──────────────────────────────────
+      - name: Build & Push Frontend (GHCR)
         uses: docker/build-push-action@v5
         with:
           context: ./apps/frontend
           push: true
           tags: |
-            ghcr.io/akshatsainiaks/srevox-db-auditor-frontend:${{ steps.version.outputs.tag }}
-            akshatsaini08/srevox-db-auditor-frontend:${{ steps.version.outputs.tag }}
-            akshatsaini08/srevox-db-auditor-frontend:latest
+            ghcr.io/${{ github.repository_owner }}/srevox-db-auditor-frontend:${{ steps.version.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/srevox-db-auditor-frontend:latest
 
-      - name: Build & Push Activity Service
+      - name: Push Frontend to Docker Hub (if token authorized)
+        continue-on-error: true
+        if: steps.dockerhub_login.outcome == 'success'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/frontend
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME || 'akshatsaini08' }}/srevox-db-auditor-frontend:${{ steps.version.outputs.tag }}
+            ${{ secrets.DOCKERHUB_USERNAME || 'akshatsaini08' }}/srevox-db-auditor-frontend:latest
+
+      # ── Build & Push Activity Service ──────────────────────────
+      - name: Build & Push Activity Service (GHCR)
         uses: docker/build-push-action@v5
         with:
           context: ./apps/activity-service
           push: true
           tags: |
-            ghcr.io/akshatsainiaks/srevox-db-auditor-activity:${{ steps.version.outputs.tag }}
-            akshatsaini08/srevox-db-auditor-activity:${{ steps.version.outputs.tag }}
-            akshatsaini08/srevox-db-auditor-activity:latest
+            ghcr.io/${{ github.repository_owner }}/srevox-db-auditor-activity:${{ steps.version.outputs.tag }}
+            ghcr.io/${{ github.repository_owner }}/srevox-db-auditor-activity:latest
+
+      - name: Push Activity Service to Docker Hub (if token authorized)
+        continue-on-error: true
+        if: steps.dockerhub_login.outcome == 'success'
+        uses: docker/build-push-action@v5
+        with:
+          context: ./apps/activity-service
+          push: true
+          tags: |
+            ${{ secrets.DOCKERHUB_USERNAME || 'akshatsaini08' }}/srevox-db-auditor-activity:${{ steps.version.outputs.tag }}
+            ${{ secrets.DOCKERHUB_USERNAME || 'akshatsaini08' }}/srevox-db-auditor-activity:latest
 
   release:
     needs: build
@@ -70,7 +110,7 @@ jobs:
     permissions:
       contents: write
     steps:
-      - name: Create release in srevox-db-auditor
+      - name: Create GitHub Release in srevox-db-auditor
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -78,9 +118,14 @@ jobs:
           body: |
             ## Srevox DB Auditor ${{ github.ref_name }} Released 🚀
 
-            Enterprise Database Audit, DDL Tracking & CDC Intelligence.
+            Enterprise Database Audit, Real-Time CDC Tracking & DDL Intelligence.
 
-            ### Quick Update:
+            ### Quick Install (One-Command):
+            ```bash
+            curl -sSL https://raw.githubusercontent.com/Akshatsainiaks/srevox-db-auditor/main/setup.sh | bash
+            ```
+
+            ### Update Existing Instance:
             ```bash
             docker compose pull
             docker compose up -d

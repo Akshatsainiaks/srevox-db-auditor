@@ -1,6 +1,6 @@
 [package]
 name = "db-audit-processor"
-version = "1.0.3"
+version = "0.0.1"
 edition = "2021"
 authors = ["Srevox Engineering"]
 description = "High-performance Rust streaming processor for CDC audit events, memory masking, and cryptographic ledger hash chaining"

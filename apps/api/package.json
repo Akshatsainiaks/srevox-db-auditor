@@ -1,6 +1,6 @@
 {
   "name": "srevox-db-auditor-api",
-  "version": "1.0.3",
+  "version": "0.0.1",
   "description": "Srevox main API — Node.js + Fastify + PostgreSQL + Redis",
   "type": "module",
   "scripts": {
