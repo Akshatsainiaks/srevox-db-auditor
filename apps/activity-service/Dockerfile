@@ -6,7 +6,7 @@ WORKDIR /usr/src/activity-service
 RUN apt-get update && apt-get install -y pkg-config libssl-dev && rm -rf /var/lib/apt/lists/*
 
 # Copy cargo manifest and sources
-COPY Cargo.toml Cargo.lock ./
+COPY Cargo.toml Cargo.lock* ./
 COPY src ./src
 
 # Build release binary

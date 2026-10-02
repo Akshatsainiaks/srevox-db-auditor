@@ -11,4 +11,3 @@ __pycache__/
 .DS_Store
 **/.DS_Store
 **/target/
-**/Cargo.lock
