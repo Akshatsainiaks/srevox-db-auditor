@@ -81,7 +81,7 @@ export default function ActivityDetailPage() {
   const [channelsList, setChannelsList] = useState<any[]>([]);
   const [resourceAlertsList, setResourceAlertsList] = useState<any[]>([]);
   const [clustersList, setClustersList] = useState<any[]>([]);
-  const [rulesList, setRulesList] = useState<any[]>([]);
+  const [connectorsList, setRulesList] = useState<any[]>([]);
 
   const lastActivityRef = useRef<number>(Date.now());
 
@@ -283,7 +283,7 @@ export default function ActivityDetailPage() {
       return matched ? `Cluster: ${matched.name}` : val;
     }
     if (val.startsWith("rul")) {
-      const matched = rulesList.find(r => r.rule_id === val);
+      const matched = connectorsList.find(r => r.rule_id === val);
       return matched ? `Alert Rule: ${matched.name}` : val;
     }
     return val;

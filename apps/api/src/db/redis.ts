@@ -1,10 +1,14 @@
 import Redis from "ioredis";
 import "dotenv/config";
 
-const redis = new Redis(process.env.REDIS_URL || "redis://localhost:6379", {
+const redisUrl = process.env.REDIS_URL || "redis://localhost:6379";
+const isTls = redisUrl.startsWith("rediss://") || redisUrl.includes("upstash.io") || process.env.REDIS_TLS === "true";
+
+const redis = new Redis(redisUrl, {
   maxRetriesPerRequest: 3,
   retryStrategy: (times) => Math.min(times * 100, 3000),
   lazyConnect: false,
+  tls: isTls ? {} : undefined,
 });
 
 redis.on("error", (err) => console.warn("[redis] error:", err.message));

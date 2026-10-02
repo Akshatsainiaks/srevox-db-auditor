@@ -99,8 +99,8 @@ export default async function userRoutes(app: FastifyInstance) {
 
     await sql.begin(async (tx: any) => {
       await tx`
-        INSERT INTO users (user_id, org_id, email, hashed_password, full_name, role)
-        VALUES (${userId}, ${org_id}, ${email}, ${hashed}, ${full_name || ""}, ${role})
+        INSERT INTO users (id, user_id, org_id, email, password, password_hash, hashed_password, name, full_name, role)
+        VALUES (${userId}, ${userId}, ${org_id}, ${email}, ${hashed}, ${hashed}, ${hashed}, ${full_name || ""}, ${full_name || ""}, ${role})
       `;
       await tx`
         INSERT INTO user_organizations (user_id, org_id, role)
@@ -192,8 +192,8 @@ export default async function userRoutes(app: FastifyInstance) {
           const userId = genId("usr");
           await sql.begin(async (tx: any) => {
             await tx`
-              INSERT INTO users (user_id, org_id, email, hashed_password, full_name, role)
-              VALUES (${userId}, ${org_id}, ${email}, ${hashed}, ${full_name}, ${default_role})
+              INSERT INTO users (id, user_id, org_id, email, password, password_hash, hashed_password, name, full_name, role)
+              VALUES (${userId}, ${userId}, ${org_id}, ${email}, ${hashed}, ${hashed}, ${hashed}, ${full_name || ""}, ${full_name || ""}, ${default_role})
             `;
             await tx`
               INSERT INTO user_organizations (user_id, org_id, role)
@@ -336,8 +336,8 @@ export default async function userRoutes(app: FastifyInstance) {
         `;
       } else {
         await tx`
-          INSERT INTO users (user_id, org_id, email, hashed_password, full_name, role)
-          VALUES (${userId}, ${invite.org_id}, ${invite.email}, ${hashed}, ${full_name || ""}, ${invite.role})
+          INSERT INTO users (id, user_id, org_id, email, password, password_hash, hashed_password, name, full_name, role)
+          VALUES (${userId}, ${userId}, ${invite.org_id}, ${invite.email}, ${hashed}, ${hashed}, ${hashed}, ${full_name || ""}, ${full_name || ""}, ${invite.role})
         `;
         await tx`
           INSERT INTO user_organizations (user_id, org_id, role)

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Loader2, X, Info, Mail, MessageSquare, Phone, Webhook, Users, Settings } from "lucide-react";
+import { Loader2, X, Info, Mail, MessageSquare, Phone, Webhook, Settings } from "lucide-react";
 import { createChannel } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 
@@ -76,9 +76,7 @@ export default function AddModal({
 }) {
   const [name, setName] = useState("");
   const [type, setType] = useState<ChannelType | null>(null);
-  const [channelType, setChannelType] = useState<"normal" | "service_owner" | null>(null);
   const [whatsappProvider, setWhatsappProvider] = useState<"twilio" | "meta" | null>(null);
-  const [isGlobalDefault, setIsGlobalDefault] = useState(false);
   const [cfg, setCfg] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(false);
   const { success, error } = useToast();
@@ -88,15 +86,9 @@ export default function AddModal({
   const isFormValid = () => {
     if (!name.trim()) return false;
     if (!type) return false;
-    if (type === "email" && !channelType) return false;
     if (type === "whatsapp" && !whatsappProvider) return false;
 
     const displayedFields = FIELDS[type].filter((f) => {
-      if (type === "email") {
-        if (channelType === "service_owner" && (f.key === "to" || f.key === "cc" || f.key === "bcc")) {
-          return false;
-        }
-      }
       if (type !== "whatsapp") return true;
       if (f.key === "provider" || f.key === "to") return true;
       if (whatsappProvider === "meta") {
@@ -119,127 +111,101 @@ export default function AddModal({
   const submit = async () => {
     if (!isFormValid() || !type) return;
 
-    if (type === "email" && channelType === "normal") {
-      const smtpUser = cfg.smtp_user || "";
-      const fromEmail = cfg.from || "";
-      const recipientList = cfg.to || "";
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-      if (!emailRegex.test(smtpUser.trim())) {
-        error("Validation Error", "SMTP Username must be a valid email address.");
-        return;
-      }
-      if (fromEmail.trim() && !emailRegex.test(fromEmail.trim())) {
-        error("Validation Error", "From Email Address must be a valid email address.");
-        return;
-      }
-
-      const recipients = recipientList.split(",").map(r => r.trim()).filter(Boolean);
-      if (recipients.length === 0) {
-        error("Validation Error", "Please provide at least one recipient email address.");
-        return;
-      }
-      for (const rec of recipients) {
-        if (!emailRegex.test(rec)) {
-          error("Validation Error", `"${rec}" is not a valid recipient email address.`);
-          return;
-        }
-      }
-    }
-
-    const configToSave = { ...cfg };
-    if (type === "whatsapp") {
-      configToSave.provider = whatsappProvider || "twilio";
-    }
-
     setLoading(true);
     try {
+      const finalConfig = { ...cfg };
+      if (type === "whatsapp") {
+        finalConfig.provider = whatsappProvider || "twilio";
+      }
+
       await createChannel({
-        name,
+        name: name.trim(),
         type,
-        config: configToSave,
-        channel_type: type === "email" ? (channelType || "normal") : "normal",
-        is_global_default: type === "email" && channelType === "service_owner" ? isGlobalDefault : false
+        config: finalConfig,
+        channel_type: "normal",
+        is_global_default: false,
       });
-      success("Channel Added", `Successfully configured alert channel ${name}`);
+
+      success("Channel created", `Alert channel "${name}" has been configured.`);
       onAdded();
       onClose();
-    } catch (e: any) {
-      console.error(e);
-      error("Failed to Create Channel", e?.response?.data?.detail || "Make sure credentials are valid");
+    } catch (err: any) {
+      error("Failed to add channel", err.response?.data?.detail || err.message || "An unexpected error occurred");
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <div className="fixed inset-0 bg-[#07080d]/75 backdrop-blur-[6px] flex items-center justify-center z-50 p-4 animate-modal-fade-in">
+    <div className="fixed inset-0 overflow-hidden z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-modal-fade-in">
       {modalStyles}
-      <div className="bg-white dark:bg-[#13151f] rounded-3xl shadow-2xl border border-gray-100 dark:border-slate-800/80 w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-modal-slide-up">
+      <div 
+        className="w-full max-w-lg bg-white dark:bg-[#11131a] border border-gray-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-modal-slide-up"
+      >
         {/* Header */}
-        <div className="px-6 py-5 border-b border-gray-150 dark:border-slate-800/60 flex items-center justify-between bg-white dark:bg-[#13151f] shrink-0">
+        <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800/60 flex items-center justify-between shrink-0">
           <div>
-            <h2 className="font-bold text-gray-900 dark:text-white text-base">Add Alert Channel</h2>
-            <p className="text-xs text-gray-450 dark:text-slate-500 mt-0.5">Integrate a new destination for incident dispatching</p>
+            <h3 className="font-bold text-gray-900 dark:text-white text-base">Add Alert Channel</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">Route system alerts and notifications</p>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800/60 text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 transition-colors"
+          <button 
+            onClick={onClose} 
+            className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Form Content */}
-        <div className="p-6 space-y-5 overflow-y-auto flex-1 scrollbar-thin">
+        {/* Content Area */}
+        <div className="p-6 overflow-y-auto space-y-6 flex-1">
+          {/* Channel Name */}
           <div className="space-y-1.5">
             <label className="block text-[11px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
               Channel Name <span className="text-red-500 font-bold">*</span>
             </label>
             <input
               className="input w-full"
-              placeholder="e.g. Engineering On-Call Alerts"
+              placeholder="e.g. Production Alerts, Database Monitoring"
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoFocus
             />
           </div>
 
-          <div className="space-y-1.5">
-            <label className="block text-[11px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Channel Type</label>
+          {/* Primary Type Selection Grid */}
+          <div className="space-y-2">
+            <label className="block text-[11px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
+              Channel Platform <span className="text-red-500 font-bold">*</span>
+            </label>
             <div className="grid grid-cols-2 gap-3">
               {[
                 {
                   id: "email",
                   label: "Email (SMTP)",
-                  description: "Route via custom SMTP servers",
+                  description: "Direct email alerts via SMTP",
                   icon: Mail,
-                  colorClass: "bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400",
-                  borderClass: "hover:border-violet-300 dark:hover:border-violet-800/80"
+                  colorClass: "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400"
                 },
                 {
                   id: "teams",
                   label: "Microsoft Teams",
-                  description: "Dispatch via Teams Workflows",
+                  description: "Incoming Webhook integration",
                   icon: MessageSquare,
-                  colorClass: "bg-blue-50 text-blue-600 dark:bg-blue-500/10 dark:text-blue-400",
-                  borderClass: "hover:border-blue-300 dark:hover:border-blue-800/80"
+                  colorClass: "bg-indigo-50 text-indigo-600 dark:bg-indigo-500/10 dark:text-indigo-400"
                 },
                 {
                   id: "whatsapp",
-                  label: "WhatsApp Message",
-                  description: "Send via Twilio or Meta APIs",
+                  label: "WhatsApp",
+                  description: "Twilio or Meta Cloud API",
                   icon: Phone,
-                  colorClass: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400",
-                  borderClass: "hover:border-emerald-300 dark:hover:border-emerald-800/80"
+                  colorClass: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
                 },
                 {
                   id: "webhook",
                   label: "Custom Webhook",
-                  description: "POST JSON payloads to endpoints",
+                  description: "HTTP POST payloads",
                   icon: Webhook,
-                  colorClass: "bg-cyan-50 text-cyan-600 dark:bg-cyan-500/10 dark:text-cyan-400",
-                  borderClass: "hover:border-cyan-300 dark:hover:border-cyan-800/80"
+                  colorClass: "bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400"
                 }
               ].map((item) => {
                 const IconComponent = item.icon;
@@ -249,81 +215,27 @@ export default function AddModal({
                     type="button"
                     onClick={() => {
                       setType(item.id as ChannelType);
-                      setChannelType(null);
-                      setWhatsappProvider(null);
                       setCfg({});
+                      setWhatsappProvider(null);
                     }}
                     className={`p-3.5 rounded-2xl border text-left transition-all duration-200 flex items-start gap-3 select-none relative group ${
                       type === item.id
-                        ? "border-indigo-500 bg-indigo-500/[0.02] dark:bg-indigo-500/5 ring-1 ring-indigo-500 shadow-sm"
-                        : `border-gray-200 dark:border-slate-800/80 bg-white dark:bg-[#151724]/30 ${item.borderClass} hover:bg-gray-50/50 dark:hover:bg-slate-900/40`
+                        ? "border-indigo-500 bg-indigo-500/[0.03] dark:bg-indigo-500/10 ring-1 ring-indigo-500 shadow-sm"
+                        : "border-gray-200 dark:border-slate-800/80 bg-white dark:bg-[#151724]/30 hover:border-gray-300 dark:hover:border-slate-700 hover:bg-gray-50/50 dark:hover:bg-slate-900/40"
                     }`}
                   >
-                    <div className={`p-2 rounded-xl shrink-0 ${item.colorClass}`}>
-                      <IconComponent className="w-4 h-4" />
+                    <div className={`p-2.5 rounded-xl shrink-0 ${item.colorClass}`}>
+                      <IconComponent className="w-5 h-5" />
                     </div>
-                    <div className="space-y-0.5">
-                      <h4 className="text-xs font-bold text-gray-900 dark:text-white group-hover:text-indigo-600 dark:group-hover:text-indigo-400 transition-colors">
-                        {item.label}
-                      </h4>
-                      <p className="text-[10px] text-gray-500 dark:text-slate-400 leading-snug">
-                        {item.description}
-                      </p>
+                    <div className="space-y-0.5 min-w-0 flex-1">
+                      <h4 className="text-xs font-bold text-gray-900 dark:text-white truncate">{item.label}</h4>
+                      <p className="text-[10px] text-gray-400 dark:text-slate-500 leading-tight line-clamp-2">{item.description}</p>
                     </div>
                   </button>
                 );
               })}
             </div>
           </div>
-
-          {/* Email subtypes selection */}
-          {type === "email" && (
-            <div className="space-y-2 pt-2 border-t border-gray-100 dark:border-slate-800/60 animate-modal-fade-in">
-              <label className="block text-[11px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
-                Mail Routing Configuration
-              </label>
-              <div className="grid grid-cols-2 gap-3 mt-1">
-                {[
-                  {
-                    id: "normal",
-                    label: "Normal / Static",
-                    description: "Predefined list of target emails",
-                    icon: Mail,
-                    colorClass: "bg-emerald-50 text-emerald-600 dark:bg-emerald-500/10 dark:text-emerald-400"
-                  },
-                  {
-                    id: "service_owner",
-                    label: "Service Owners Only",
-                    description: "Dynamic routing based on ownership",
-                    icon: Users,
-                    colorClass: "bg-violet-50 text-violet-600 dark:bg-violet-500/10 dark:text-violet-400"
-                  }
-                ].map((subtype) => {
-                  const SubtypeIcon = subtype.icon;
-                  return (
-                    <button
-                      key={subtype.id}
-                      type="button"
-                      onClick={() => setChannelType(subtype.id as any)}
-                      className={`p-3 rounded-2xl border text-left transition-all duration-200 flex items-start gap-3 select-none relative group ${
-                        channelType === subtype.id
-                          ? "border-indigo-500 bg-indigo-500/[0.02] dark:bg-indigo-500/5 ring-1 ring-indigo-500 shadow-sm"
-                          : "border-gray-200 dark:border-slate-800/80 bg-white dark:bg-[#151724]/30 hover:border-gray-300 dark:hover:border-slate-700 hover:bg-gray-50/50 dark:hover:bg-slate-900/40"
-                      }`}
-                    >
-                      <div className={`p-2 rounded-lg shrink-0 ${subtype.colorClass}`}>
-                        <SubtypeIcon className="w-4 h-4" />
-                      </div>
-                      <div className="space-y-0.5">
-                        <h5 className="text-[11px] font-bold text-gray-900 dark:text-white">{subtype.label}</h5>
-                        <p className="text-[9px] text-gray-500 dark:text-slate-400 leading-tight">{subtype.description}</p>
-                      </div>
-                    </button>
-                  );
-                })}
-              </div>
-            </div>
-          )}
 
           {/* WhatsApp provider selection */}
           {type === "whatsapp" && (
@@ -374,8 +286,8 @@ export default function AddModal({
             </div>
           )}
 
-          {/* Dynamic Fields - Renders only after type-specific sub-selection is completed */}
-          {type && (type !== "email" || channelType !== null) && (type !== "whatsapp" || whatsappProvider !== null) && (
+          {/* Dynamic Fields */}
+          {type && (type !== "whatsapp" || whatsappProvider !== null) && (
             <div className="space-y-4 pt-2 border-t border-gray-100 dark:border-slate-800/60 animate-modal-fade-in">
               {type === "teams" && (
                 <div className="bg-amber-50/50 dark:bg-amber-500/[0.03] border border-amber-150 dark:border-amber-500/20 p-4 rounded-2xl flex items-start gap-3 select-none">
@@ -395,11 +307,6 @@ export default function AddModal({
                 </div>
               )}
               {FIELDS[type].filter((f) => {
-                if (type === "email") {
-                  if (channelType === "service_owner" && (f.key === "to" || f.key === "cc" || f.key === "bcc")) {
-                    return false;
-                  }
-                }
                 if (type !== "whatsapp") return true;
                 if (f.key === "provider" || f.key === "to") return true;
                 if (whatsappProvider === "meta") {
@@ -424,8 +331,6 @@ export default function AddModal({
                   {f.hint && <p className="text-[10px] text-gray-450 dark:text-slate-500 mt-1 pl-1">{f.hint}</p>}
                 </div>
               ))}
-
-
             </div>
           )}
         </div>

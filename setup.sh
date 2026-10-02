@@ -8,11 +8,11 @@ YELLOW="\033[33m"
 RED="\033[31m"
 RESET="\033[0m"
 
-BASE="https://raw.githubusercontent.com/Akshatsainiaks/srevox/main"
+BASE="https://raw.githubusercontent.com/Akshatsainiaks/srevox-db-auditor/main"
 
 echo ""
-echo -e "${CYAN}${BOLD}⚡ Srevox — Self-Hosted Setup${RESET}"
-echo -e "${CYAN}   Kubernetes Pod Crash Alerting${RESET}"
+echo -e "${CYAN}${BOLD}⚡ Srevox DB Auditor — Self-Hosted Setup${RESET}"
+echo -e "${CYAN}   Database Audit, DDL Tracking & CDC Change Intelligence${RESET}"
 echo ""
 
 # ── Check Docker ──────────────────────────────────────────────
@@ -27,15 +27,14 @@ fi
 echo -e "${GREEN}✓ Docker found${RESET}"
 
 # ── Create folder structure ───────────────────────────────────
-mkdir -p srevox
-cd srevox
-echo -e "${GREEN}✓ Created srevox/ directory${RESET}"
+mkdir -p srevox-db-auditor
+cd srevox-db-auditor
+echo -e "${GREEN}✓ Created srevox-db-auditor/ directory${RESET}"
 
 # ── Download all required files ───────────────────────────────
-echo -e "${CYAN}→ Downloading files...${RESET}"
+echo -e "${CYAN}→ Downloading deployment files...${RESET}"
 
-curl -fsSL "$BASE/docker-compose.yml"                        -o docker-compose.yml
-
+curl -fsSL "$BASE/docker-compose.yml" -o docker-compose.yml
 echo -e "${GREEN}✓ docker-compose.yml downloaded${RESET}"
 
 # ── Create .env if not exists ─────────────────────────────────
@@ -43,12 +42,12 @@ if [ ! -f .env ]; then
   curl -fsSL "$BASE/.env.example" -o .env
   echo -e "${GREEN}✓ .env created from template${RESET}"
   echo ""
-  echo -e "${YELLOW}${BOLD}⚠️  Edit .env before starting:${RESET}"
-  echo -e "${YELLOW}   POSTGRES_PASSWORD=your_secure_password${RESET}"
+  echo -e "${YELLOW}${BOLD}⚠️  Review .env before starting (optional for custom ports):${RESET}"
+  echo -e "${YELLOW}   POSTGRES_PASSWORD=srevoxdbauditor${RESET}"
   echo -e "${YELLOW}   BACKEND_SECRET_KEY=any_32_char_string_here_xxxx${RESET}"
   echo -e "${YELLOW}   ENCRYPTION_KEY=exactly_32_chars_here__________${RESET}"
-  echo -e "${YELLOW}   NEXT_PUBLIC_API_URL=http://YOUR_SERVER_IP:4000${RESET}"
-  echo -e "${YELLOW}   FRONTEND_URL=http://YOUR_SERVER_IP:3000${RESET}"
+  echo -e "${YELLOW}   API_URL=http://YOUR_SERVER_IP:7001${RESET}"
+  echo -e "${YELLOW}   FRONTEND_URL=http://YOUR_SERVER_IP:7005${RESET}"
   echo ""
   echo -e "   Run: ${BOLD}nano .env${RESET}"
   echo ""
@@ -57,19 +56,17 @@ else
 fi
 
 # ── Pull all images ───────────────────────────────────────────
-echo -e "${CYAN}→ Pulling Srevox images from Docker Hub...${RESET}"
+echo -e "${CYAN}→ Pulling Srevox DB Auditor images from Docker Hub...${RESET}"
 docker compose pull
-echo -e "${GREEN}✓ All images pulled${RESET}"
+echo -e "${GREEN}✓ All images pulled successfully${RESET}"
 
 echo ""
-echo -e "${GREEN}${BOLD}✅ Srevox is ready!${RESET}"
+echo -e "${GREEN}${BOLD}✅ Srevox DB Auditor is ready!${RESET}"
 echo ""
-echo -e "   1. Edit .env:          ${BOLD}nano .env${RESET}"
-echo -e "   2. Start Srevox:      ${BOLD}docker compose up -d${RESET}"
+echo -e "   1. Start DB Auditor:  ${BOLD}docker compose up -d${RESET}"
+echo -e "   2. Console UI:        ${CYAN}http://localhost:7005/login${RESET}"
+echo -e "   3. API Endpoint:      ${CYAN}http://localhost:7001${RESET}"
+echo -e "   4. Default Admin:     ${CYAN}admin@srevox.local / admin123${RESET}"
 echo ""
-echo -e "   Login Link: ${CYAN}http://YOUR_SERVER_IP:3000/login?email=admin@srevox.local${RESET}"
-echo -e "   API:        ${CYAN}http://YOUR_SERVER_IP:4000${RESET}"
-echo -e "   Password:   ${CYAN}admin123${RESET}"
-echo ""
-echo -e "   ${YELLOW}⚠️  Change default password after first login!${RESET}"
+echo -e "   ${YELLOW}⚠️  Change default credentials after your first login in Settings → Security!${RESET}"
 echo ""

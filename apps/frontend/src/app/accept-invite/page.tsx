@@ -57,7 +57,7 @@ function AcceptInviteForm() {
           <Link href="/" className="inline-flex flex-col items-center gap-3">
             <SrevoxLogo size={52} />
             <div>
-              <div className="font-bold text-gray-900 dark:text-white text-xl">Srevox</div>
+              <div className="font-black text-gray-900 dark:text-white text-xl">Srevox DB Auditor</div>
               <div className="text-sm text-gray-500 dark:text-slate-400">You've been invited to join</div>
             </div>
           </Link>

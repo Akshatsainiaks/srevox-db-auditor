@@ -13,9 +13,7 @@ export default async function alertRuleRoutes(app: FastifyInstance) {
   app.get("/", { onRequest: [(app as any).authenticate] }, async (req) => {
     const { org_id } = getUser(req);
     const rules = await sql`
-      SELECT ar.*, c.name as cluster_name
-      FROM alert_rules ar
-      LEFT JOIN clusters c ON ar.cluster_id = c.cluster_id
+      SELECT ar.*, ar.cluster_id as cluster_name FROM alert_rules ar
       WHERE ar.org_id = ${org_id}
       ORDER BY ar.created_at DESC
     `;
@@ -40,9 +38,7 @@ export default async function alertRuleRoutes(app: FastifyInstance) {
     const { org_id } = getUser(req);
     const { id } = req.params as { id: string };
     const [rule] = await sql`
-      SELECT ar.*, c.name as cluster_name
-      FROM alert_rules ar
-      LEFT JOIN clusters c ON ar.cluster_id = c.cluster_id
+      SELECT ar.*, ar.cluster_id as cluster_name FROM alert_rules ar
       WHERE ar.rule_id = ${id} AND ar.org_id = ${org_id}
     `;
     if (!rule) return reply.status(404).send({ detail: "Alert rule not found" });
@@ -72,14 +68,7 @@ export default async function alertRuleRoutes(app: FastifyInstance) {
       only_increase_restarts = true,
     } = req.body as any;
 
-    if (!name || !cluster_id)
-      return reply.status(400).send({ detail: "name and cluster_id required" });
-
-    // Verify cluster belongs to this org
-    const [cluster] = await sql`
-      SELECT cluster_id FROM clusters WHERE cluster_id = ${cluster_id} AND org_id = ${org_id}
-    `;
-    if (!cluster) return reply.status(404).send({ detail: "Cluster not found in your organization" });
+    if (!name) return reply.status(400).send({ detail: "name is required" });
 
     const id = genId("arl");
     await sql`
@@ -131,7 +120,7 @@ export default async function alertRuleRoutes(app: FastifyInstance) {
   }, async (req) => {
     const { org_id } = getUser(req);
     const { id } = req.params as { id: string };
-    await sql`UPDATE incidents SET rule_id = NULL WHERE rule_id = ${id}`;
+    try { await sql`UPDATE incidents SET rule_id = NULL WHERE rule_id = ${id}`; } catch {}
     await sql`DELETE FROM alert_rules WHERE rule_id = ${id} AND org_id = ${org_id}`;
     return { message: "Deleted" };
   });

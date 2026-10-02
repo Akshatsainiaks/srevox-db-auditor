@@ -1,138 +1,188 @@
 "use client";
-import React, { useState, useEffect } from "react";
-import { Compass, Sparkles, Settings } from "lucide-react";
 
-export default function DemoSettingsPage() {
+import React, { useState, useEffect } from "react";
+import { Compass, Play, Sparkles, CheckCircle2, Shield, Info, RefreshCw, Layers, Database, Zap, Bell, Clock } from "lucide-react";
+import { useToast } from "@/components/Toast";
+
+export default function DemoTourSettingsPage() {
+  const { success } = useToast();
   const [toggleState, setToggleState] = useState(true);
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
+    setMounted(true);
     if (typeof window !== "undefined") {
-      setToggleState(localStorage.getItem("sv_show_navbar_quick_tour") !== "false");
-      const timer = setTimeout(() => {
-        setMounted(true);
-      }, 50);
-      return () => clearTimeout(timer);
+      const val = localStorage.getItem("sv_show_navbar_quick_tour");
+      setToggleState(val !== "false");
     }
   }, []);
 
-  const startLiveTour = () => {
-    if (typeof window !== "undefined") {
-      localStorage.removeItem("sv_auto_tour_active");
-      localStorage.removeItem("sv_autopilot_tour_active");
-      localStorage.removeItem("sv_settings_tour_active");
-      localStorage.setItem("sv_start_live_tour_on_load", "true");
-      localStorage.removeItem("sv_completed_tours");
-      localStorage.removeItem("sv_tour_completed");
-      window.dispatchEvent(new Event("sv_tour_status_changed"));
-      window.location.href = "/dashboard";
-    }
-  };
-
-  const startTour = (autopilot: boolean, isSettingsOnly: boolean = false) => {
-    if (typeof window !== "undefined") {
-      localStorage.setItem("sv_auto_tour_active", "true");
-      localStorage.setItem("sv_auto_tour_page_index", "0");
-      if (autopilot) {
-        localStorage.setItem("sv_autopilot_tour_active", "true");
-      } else {
-        localStorage.removeItem("sv_autopilot_tour_active");
-      }
+  const startTour = (isSmart = false, isSettingsOnly = false) => {
+    try {
+      localStorage.setItem("sv_tour_completed", "false");
       if (isSettingsOnly) {
         localStorage.setItem("sv_settings_tour_active", "true");
       } else {
         localStorage.removeItem("sv_settings_tour_active");
       }
-      localStorage.removeItem("sv_mock_initialized"); // Force re-initialization of mock data
-      localStorage.removeItem("sv_mock_clusters");
-      localStorage.removeItem("sv_mock_incidents");
-      localStorage.removeItem("sv_mock_channels");
-      localStorage.removeItem("sv_mock_rules");
-      localStorage.removeItem("sv_mock_resource_alerts");
-      localStorage.removeItem("sv_mock_service_owners");
-      localStorage.removeItem("sv_completed_tours");
-      localStorage.removeItem("sv_tour_completed");
-      window.dispatchEvent(new Event("sv_tour_status_changed"));
-      window.dispatchEvent(new Event("sv_start_auto_tour"));
-      
-      // Redirect to the first page in the tour sequence
-      if (isSettingsOnly) {
-        window.location.href = "/settings/profile";
-      } else {
-        window.location.href = "/dashboard";
+
+      if (isSmart) {
+        localStorage.setItem("sv_autopilot_tour_active", "true");
+        localStorage.setItem("sv_auto_tour_active", "true");
+        localStorage.setItem("sv_auto_tour_page_index", "0");
+        window.dispatchEvent(new Event("sv_start_auto_tour"));
+        success("Autopilot Live Demo Started", "Beginning automated DB Auditor interactive walkthrough.");
+        window.location.href = isSettingsOnly ? "/settings/profile" : "/dashboard";
+        return;
       }
+
+      localStorage.removeItem("sv_autopilot_tour_active");
+      localStorage.setItem("sv_auto_tour_active", "true");
+      localStorage.setItem("sv_auto_tour_page_index", "0");
+      window.dispatchEvent(new Event("sv_start_tour"));
+      success("Full Tour Started", "Beginning DB Auditor guided tour with demo data.");
+      window.location.href = isSettingsOnly ? "/settings/profile" : "/dashboard";
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const startLiveTour = () => {
+    try {
+      localStorage.removeItem("sv_autopilot_tour_active");
+      localStorage.setItem("sv_auto_tour_active", "true");
+      localStorage.setItem("sv_auto_tour_page_index", "0");
+      window.dispatchEvent(new Event("sv_start_tour"));
+      success("Quick Manual Tour Started", "Beginning step-by-step tour on your active workspace.");
+      window.location.href = "/dashboard";
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const resetTourStatus = () => {
+    try {
+      localStorage.removeItem("sv_tour_completed");
+      localStorage.removeItem("sv_completed_tours");
+      localStorage.removeItem("sv_auto_tour_active");
+      localStorage.removeItem("sv_auto_tour_page_index");
+      localStorage.removeItem("sv_autopilot_tour_active");
+      localStorage.removeItem("sv_settings_tour_active");
+      localStorage.removeItem("sv_mock_connectors");
+      localStorage.removeItem("sv_mock_audit_events");
+      localStorage.removeItem("sv_mock_channels");
+      localStorage.removeItem("sv_mock_retention_db_audit");
+      localStorage.removeItem("sv_mock_initialized");
+      localStorage.removeItem("sv_backend_offline");
+
+      window.dispatchEvent(new Event("sv_tour_status_changed"));
+      success("Tour Status Reset", "Tour progress and demo sandbox cache have been reset.");
+    } catch (e) {
+      console.error(e);
     }
   };
 
   return (
-    <div className="card p-6 space-y-6 bg-white dark:bg-[#13151f] border border-gray-150 dark:border-slate-800/60 rounded-2xl shadow-sm animate-modal-slide-up" style={{ animationDuration: "0.2s" }}>
-      <div className="flex items-center gap-3 pb-4 border-b border-gray-100 dark:border-slate-800/60">
-        <div className="w-9 h-9 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center">
-          <Compass className="w-4 h-4 text-indigo-650 dark:text-indigo-400" />
+    <div className="bg-white dark:bg-[#13151f] border border-gray-150 dark:border-slate-800/80 rounded-2xl p-6 shadow-sm space-y-6 animate-modal-slide-up">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 pb-4 border-b border-gray-100 dark:border-slate-800/60">
+        <div className="flex items-start gap-3">
+          <div className="w-10 h-10 rounded-xl bg-indigo-50 dark:bg-indigo-500/10 flex items-center justify-center text-indigo-500 shrink-0">
+            <Compass className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-gray-900 dark:text-white flex items-center gap-2">
+              Srevox DB Auditor Guided Tours & Sandbox
+            </h2>
+            <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5">
+              Interactive guides, automated walkthroughs, and demo sandbox mode for database change intelligence.
+            </p>
+          </div>
         </div>
-        <div>
-          <h2 className="font-bold text-gray-900 dark:text-white text-sm">Interactive Workspace Demo</h2>
-          <p className="text-xs text-gray-555 dark:text-slate-405">Launch an automatic system-wide guided tour of all Srevox dashboard pages</p>
+
+        <div className="flex items-center gap-2">
+          <button
+            type="button"
+            onClick={resetTourStatus}
+            className="btn-secondary text-[11px] font-bold py-2 px-3 rounded-xl border border-gray-200 dark:border-slate-800 flex items-center gap-1.5 hover:text-red-500 transition-colors"
+          >
+            <RefreshCw className="w-3.5 h-3.5" />
+            <span>Reset Tour Cache</span>
+          </button>
         </div>
       </div>
 
       <div className="space-y-4">
-        <p className="text-xs text-gray-655 dark:text-slate-405 leading-relaxed">
-          The Srevox Auto-Play System Tour will automatically walk you through every critical feature of the dashboard:
+        <p className="text-xs text-gray-600 dark:text-slate-400 leading-relaxed">
+          The Srevox DB Auditor Interactive Tour walks you through every core feature of database change intelligence:
         </p>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
-          <div className="p-3 bg-gray-50/50 dark:bg-slate-900/30 rounded-xl border border-gray-150 dark:border-slate-800/60">
-            <span className="text-xs font-bold text-gray-900 dark:text-white">🖥️ Infrastructure Clusters</span>
-            <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1 leading-relaxed">How to connect clusters and view node health status.</p>
+          <div className="p-3.5 bg-gray-50/50 dark:bg-slate-900/30 rounded-xl border border-gray-150 dark:border-slate-800/60">
+            <div className="flex items-center gap-2">
+              <Database className="w-4 h-4 text-indigo-500" />
+              <span className="text-xs font-bold text-gray-900 dark:text-white">Database Connectors</span>
+            </div>
+            <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1 leading-relaxed">Log-based CDC replication across PostgreSQL, MySQL, MongoDB, and Redis.</p>
           </div>
-          <div className="p-3 bg-gray-50/50 dark:bg-slate-900/30 rounded-xl border border-gray-150 dark:border-slate-800/60">
-            <span className="text-xs font-bold text-gray-900 dark:text-white">🚨 Live Crash Incident Feed</span>
-            <p className="text-[10px] text-gray-500 dark:text-slate-500 mt-1 leading-relaxed">Real-time incident streams, log telemetry, and AI diagnosis reports.</p>
+
+          <div className="p-3.5 bg-gray-50/50 dark:bg-slate-900/30 rounded-xl border border-gray-150 dark:border-slate-800/60">
+            <div className="flex items-center gap-2">
+              <Zap className="w-4 h-4 text-amber-500" />
+              <span className="text-xs font-bold text-gray-900 dark:text-white">Live CDC Stream</span>
+            </div>
+            <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1 leading-relaxed">Real-time row mutations, before/after column diffs, and PII masking.</p>
           </div>
-          <div className="p-3 bg-gray-50/50 dark:bg-slate-900/30 rounded-xl border border-gray-150 dark:border-slate-800/60">
-            <span className="text-xs font-bold text-gray-900 dark:text-white">🔔 Notification Channels</span>
-            <p className="text-[10px] text-gray-500 dark:text-slate-500 mt-1 leading-relaxed">Slack, Webhooks, WhatsApp, SMTP Email routing configurations.</p>
+
+          <div className="p-3.5 bg-gray-50/50 dark:bg-slate-900/30 rounded-xl border border-gray-150 dark:border-slate-800/60">
+            <div className="flex items-center gap-2">
+              <Clock className="w-4 h-4 text-blue-500" />
+              <span className="text-xs font-bold text-gray-900 dark:text-white">Data Retention</span>
+            </div>
+            <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1 leading-relaxed">Configurable purge policies, cron intervals, and ledger cleanup runs.</p>
           </div>
-          <div className="p-3 bg-gray-50/50 dark:bg-slate-900/30 rounded-xl border border-gray-150 dark:border-slate-800/60">
-            <span className="text-xs font-bold text-gray-900 dark:text-white">📜 Custom Alerting Rules</span>
-            <p className="text-[10px] text-gray-500 dark:text-slate-500 mt-1 leading-relaxed">Configuring namespace filtering and noise reduction cooldowns.</p>
+
+          <div className="p-3.5 bg-gray-50/50 dark:bg-slate-900/30 rounded-xl border border-gray-150 dark:border-slate-800/60">
+            <div className="flex items-center gap-2">
+              <Bell className="w-4 h-4 text-purple-500" />
+              <span className="text-xs font-bold text-gray-900 dark:text-white">Alert Channels</span>
+            </div>
+            <p className="text-[10px] text-gray-400 dark:text-slate-500 mt-1 leading-relaxed">SMTP Email, Microsoft Teams Workflows, WhatsApp, and Webhooks.</p>
           </div>
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-2">
-          {/* Option A: Quick Manual Tour info */}
+          {/* Option A: Quick Manual Tour */}
           <div className="p-4 bg-gray-50/50 dark:bg-slate-900/30 border border-gray-150 dark:border-slate-800/60 rounded-2xl space-y-2 select-none flex flex-col justify-between">
             <div>
               <div className="text-xs font-bold text-gray-800 dark:text-slate-200 flex items-center gap-1.5">
                 <Compass className="w-3.5 h-3.5 text-gray-500" /> Quick Manual Tour
               </div>
-              <p className="text-[11px] text-gray-555 dark:text-slate-400 leading-relaxed mt-1.5">
-                <strong>Runs on your live data:</strong> A manual step-by-step guide across your own connected Kubernetes clusters, active alerts, and real configured Slack/email channels. Let's you learn Srevox within your actual workspace at your own pace.
+              <p className="text-[11px] text-gray-500 dark:text-slate-400 leading-relaxed mt-1.5">
+                <strong>Runs on your live data:</strong> A step-by-step guide across your own connected databases, active CDC live stream, and real channels at your own pace.
               </p>
             </div>
           </div>
 
-          {/* Option B: Full Tour with Demo Data info */}
+          {/* Option B: Full Tour with Demo Data */}
           <div className="p-4 bg-gray-50/50 dark:bg-slate-900/30 border border-gray-150 dark:border-slate-800/60 rounded-2xl space-y-2 select-none flex flex-col justify-between">
             <div>
               <div className="text-xs font-bold text-gray-800 dark:text-slate-200 flex items-center gap-1.5">
                 <Compass className="w-3.5 h-3.5 text-indigo-500" /> Full Tour with Demo Data
               </div>
-              <p className="text-[11px] text-gray-555 dark:text-slate-400 leading-relaxed mt-1.5">
-                <strong>Interactive faked-workspace manual:</strong> Runs a step-by-step tour using pre-populated faked cluster instances, faked live crash feeds, faked rule definitions, and dummy notification channels, safely isolated from your setup.
+              <p className="text-[11px] text-gray-500 dark:text-slate-400 leading-relaxed mt-1.5">
+                <strong>Interactive simulated workspace:</strong> Runs a step-by-step tour using pre-populated sample database connectors, simulated mutations, and demo channels.
               </p>
             </div>
           </div>
 
-          {/* Option C: Smart Autopilot Demo info */}
+          {/* Option C: Smart Autopilot Demo */}
           <div className="p-4 bg-indigo-50/40 dark:bg-indigo-500/[0.02] border border-indigo-100/60 dark:border-indigo-900/20 rounded-2xl space-y-2 select-none flex flex-col justify-between">
             <div>
-              <div className="text-xs font-bold text-indigo-650 dark:text-indigo-405 flex items-center gap-1.5">
+              <div className="text-xs font-bold text-indigo-600 dark:text-indigo-400 flex items-center gap-1.5">
                 <Sparkles className="w-3.5 h-3.5 text-amber-500 animate-pulse" /> Smart Autopilot Live Demo
               </div>
-              <p className="text-[11px] text-indigo-600 dark:text-slate-400 leading-relaxed mt-1.5">
-                <strong>Runs on isolated mock data:</strong> Starts a fully automated simulation that pre-populates faked pod crashes, configures mock channels, and automatically triggers typing/clicks to showcase Srevox features instantly.
+              <p className="text-[11px] text-indigo-600/80 dark:text-slate-400 leading-relaxed mt-1.5">
+                <strong>Automated simulation:</strong> Starts a hands-free tour that auto-advances through pages with live animated progress bars and simulated interaction.
               </p>
             </div>
           </div>
@@ -142,10 +192,10 @@ export default function DemoSettingsPage() {
         <div className="flex items-center justify-between p-4 bg-gray-50/50 dark:bg-slate-900/30 border border-gray-150 dark:border-slate-800/60 rounded-2xl select-none max-w-xl">
           <div className="pr-4">
             <span className="text-xs font-bold text-gray-800 dark:text-slate-200 flex items-center gap-1.5">
-              <Compass className="w-3.5 h-3.5 text-indigo-550 dark:text-indigo-400" /> Navbar Shortcut Button
+              <Compass className="w-3.5 h-3.5 text-indigo-500 dark:text-indigo-400" /> Navbar Shortcut Button
             </span>
             <p className="text-[11px] text-gray-500 dark:text-slate-400 mt-0.5 leading-relaxed">
-              Show the glowing "Quick Tour" button in the main top navigation bar for fast page-level guides.
+              Show the glowing "Quick Tour" button in the top navigation bar for fast page-level guides.
             </p>
           </div>
           <button

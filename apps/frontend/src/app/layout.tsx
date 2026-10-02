@@ -5,8 +5,8 @@ import { ToastProvider } from "@/components/Toast";
 import { ConfirmProvider } from "@/components/ConfirmModal";
 
 export const metadata: Metadata = {
-  title: "Srevox — Catch crashes before your users do.",
-  description: "Kubernetes pod crash alerting with AI diagnostics.",
+  title: "Srevox DB Auditor — Database Change Intelligence & CDC Audit",
+  description: "Real-time CDC database mutation streaming, column diff inspection, and in-memory PII masking across production databases.",
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
@@ -14,7 +14,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <head>
         {/* Inline SVG favicon — works without public folder */}
-        <link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+        <link rel="icon" href="/favicon.svg?v=5" type="image/svg+xml" />
         {/* Anti-flash script — runs before paint, applies dark class instantly */}
         <script dangerouslySetInnerHTML={{ __html: `
 (function() {

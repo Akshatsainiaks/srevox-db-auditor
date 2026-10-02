@@ -1,22 +1,16 @@
 "use client";
 import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
-import { usePathname, useSearchParams } from "next/navigation";
+import { usePathname } from "next/navigation";
 import {
-  User, Key, Server, Bell, SlidersHorizontal, Trash2,
-  Palette, Compass, Sparkles, MessageSquare, ArrowLeft,
-  Users, Shield, Users2, LogOut, TerminalSquare, FileText,
-  ChevronLeft, ChevronRight, ArrowUpCircle, Activity, Settings, Database, BookOpen, Loader2, Lock,
+  User, Server, Bell, SlidersHorizontal, Palette, Compass, MessageSquare, ArrowLeft,
+  Users, Shield, Users2, TerminalSquare, FileText, ChevronLeft, ChevronRight, Activity, Database, Loader2, ArrowUpCircle
 } from "lucide-react";
-import { getUser, hasPermission, startRoleSync, removeToken } from "@/lib/auth";
-import { apiLogout } from "@/lib/api";
-import { useRouter } from "next/navigation";
+import { getUser, hasPermission, startRoleSync } from "@/lib/auth";
 import { cn } from "@/lib/utils";
 import Navbar from "@/components/navbar/Navbar";
 import AuthGuard from "@/components/AuthGuard";
-import UpdateAnnouncement from "@/components/UpdateAnnouncement";
 import PageTutorial from "@/components/PageTutorial";
-import { useConfirm } from "@/components/ConfirmModal";
 import DefaultCredentialsWarning from "@/components/DefaultCredentialsWarning";
 
 function applySettingsTheme() {
@@ -50,16 +44,13 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
 
 function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const router = useRouter();
-  const searchParams = useSearchParams();
-  const isMoreSettings = pathname === "/settings/more-settings";
-  const activeTab = searchParams.get("tab") || (isMoreSettings ? "security" : "general");
   const user = getUser();
-  const isAdmin = user?.role === "admin";
-  const canViewTeam = hasPermission(user, "viewTeam");
-  const canViewActivity = hasPermission(user, "viewActivityLog");
-  const canViewMoreSettings = hasPermission(user, "changeSudoLock") || hasPermission(user, "changeRetention") || hasPermission(user, "viewApiDocs") || hasPermission(user, "systemAlerts");
-  const websiteUrl = process.env.NEXT_PUBLIC_WEBSITE_URL || "https://srevox-website.vercel.app";
+  const roleLower = user?.role?.toLowerCase();
+  const isAdmin = roleLower === "admin";
+  const canViewTeam = isAdmin || hasPermission(user, "viewTeam");
+  const canViewActivity = isAdmin || hasPermission(user, "viewActivityLog");
+  const websiteUrl = process.env.NEXT_PUBLIC_WEBSITE_URL || "https://www.srevox.in";
+  const docsUrl = process.env.NEXT_PUBLIC_DOCS_URL || "https://docs.srevox.in";
 
   const [collapsed, setCollapsed] = useState(false);
 
@@ -86,7 +77,7 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
   interface SettingsNavItem {
     href: string;
     label: string;
-    icon: any;
+    icon: React.ElementType;
     permission?: boolean;
     target?: string;
   }
@@ -100,8 +91,12 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
     {
       group: "Personal", items: [
         { href: "/settings/profile", label: "Profile Settings", icon: User },
-        { href: "/settings/preferences", label: "Alert Preferences", icon: Bell },
         { href: "/settings/appearance", label: "Theme & Appearance", icon: Palette },
+      ]
+    },
+    {
+      group: "Database Policies", items: [
+        { href: "/settings/retention", label: "Data Retention", icon: Database },
       ]
     },
     {
@@ -115,8 +110,8 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
     {
       group: "Advanced Settings", items: [
         { href: "/settings/org", label: "Organization", icon: Server, permission: isAdmin },
-        { href: "/settings/ai", label: "AI Assistant", icon: Sparkles },
         { href: "/settings/activity", label: "Audit Logs", icon: Activity, permission: canViewActivity },
+        { href: "/settings/updates", label: "Platform Updates", icon: ArrowUpCircle },
         { href: "/settings/demo", label: "Demo Sandbox", icon: Compass },
       ]
     },
@@ -124,36 +119,12 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
       group: "Resources", items: [
         { href: "/settings/engineering", label: "Engineering Console", icon: TerminalSquare },
         { href: "/settings/feedback", label: "Share Feedback", icon: MessageSquare },
-        { href: `${websiteUrl}/docs`, label: "Documentation", icon: FileText, target: "_blank" }
+        { href: docsUrl, label: "Documentation", icon: FileText, target: "_blank" }
       ]
     },
-    {
-      group: "More Settings", items: [
-        { href: "/settings/more-settings", label: "More Settings", icon: Settings, permission: canViewMoreSettings }
-      ]
-    }
   ];
 
-  const navList: SettingsNavGroup[] = isMoreSettings ? [
-    {
-      group: "Data Retention Policies", items: [
-        { href: "/settings/more-settings?tab=logs", label: "Audit Logs Retention", icon: FileText, permission: hasPermission(user, "changeRetention") },
-        { href: "/settings/more-settings?tab=incidents", label: "Incident Retention", icon: Activity, permission: hasPermission(user, "changeRetention") },
-      ]
-    },
-    {
-      group: "System & Alerts", items: [
-        { href: "/settings/more-settings?tab=system-alerts", label: "System Alerts", icon: Bell, permission: hasPermission(user, "systemAlerts") },
-        { href: "/settings/more-settings?tab=update", label: "Platform Update", icon: ArrowUpCircle, permission: hasPermission(user, "viewApiDocs") },
-      ]
-    },
-    {
-      group: "Developer Resources", items: [
-        { href: "/settings/more-settings?tab=api-docs", label: "API Documentation", icon: BookOpen, permission: hasPermission(user, "viewApiDocs") },
-      ]
-    }
-  ] : SETTINGS_NAV;
-
+  const navList: SettingsNavGroup[] = SETTINGS_NAV.filter(g => g.items && g.items.length > 0);
 
   return (
     <div className="h-screen flex flex-col overflow-hidden bg-slate-50 dark:bg-[#0d0f17]">
@@ -161,7 +132,6 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
         <Navbar />
         <DefaultCredentialsWarning />
       </div>
-      {/* <UpdateAnnouncement /> */}
 
       <div className="flex flex-1 overflow-hidden">
         {/* Left Settings Sidebar */}
@@ -180,18 +150,15 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
                 "text-xs font-bold text-gray-900 dark:text-white transition-all duration-300 whitespace-nowrap truncate",
                 collapsed ? "opacity-0 max-w-0 overflow-hidden" : "opacity-100 max-w-[200px]"
               )}>
-                {isMoreSettings ? "More Settings" : "Settings Panel"}
+                Settings
               </h2>
             </div>
 
-            {navList.map((grp, grpIdx) => {
+            {navList.map((grp) => {
               const visibleItems = grp.items.filter(item => item.permission !== false);
               if (visibleItems.length === 0) return null;
               return (
                 <div key={grp.group} className="space-y-1">
-                  {((grp.group === "More Settings") || (isMoreSettings && grpIdx > 0)) && (
-                    <div className="border-t border-gray-150 dark:border-slate-800/60 pt-1.5 mt-[-8px] mb-1.5 mx-1" />
-                  )}
                   <h3 className={cn(
                     "px-2 text-[9px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider transition-all duration-300 whitespace-nowrap truncate",
                     collapsed ? "opacity-0 max-w-0 overflow-hidden h-0 my-0 py-0" : "opacity-100 max-w-[200px] h-auto"
@@ -200,9 +167,7 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
                   </h3>
                   <div className="space-y-0.5">
                     {visibleItems.map((item) => {
-                      const active = isMoreSettings
-                        ? item.href.includes("?tab=") && item.href.endsWith("?tab=" + activeTab)
-                        : pathname === item.href;
+                      const active = pathname === item.href;
                       const Icon = item.icon;
                       return (
                         <Link
@@ -259,25 +224,15 @@ function SettingsLayoutContent({ children }: { children: React.ReactNode }) {
         <div className="flex-1 flex flex-col overflow-hidden relative">
           {/* Main Content Pane */}
           <main className="flex-1 overflow-y-auto bg-slate-50/50 dark:bg-[#0b0c10]/40 p-6 pt-16 relative">
-            {/* Back to Dashboard / Back to Settings */}
+            {/* Back to Dashboard */}
             <div className="absolute top-4 right-6 z-20">
-              {isMoreSettings ? (
-                <Link
-                  href="/settings/profile"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-gray-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 border border-gray-200 dark:border-slate-800 bg-white dark:bg-[#13151f] hover:bg-gray-50 dark:hover:bg-slate-800/40 shadow-sm transition-all group select-none"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform text-indigo-500" />
-                  Back to Settings
-                </Link>
-              ) : (
-                <Link
-                  href="/dashboard"
-                  className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-gray-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 border border-gray-200 dark:border-slate-800 bg-white dark:bg-[#13151f] hover:bg-gray-50 dark:hover:bg-slate-800/40 shadow-sm transition-all group select-none"
-                >
-                  <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform text-indigo-500" />
-                  Back to Dashboard
-                </Link>
-              )}
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-xs font-bold text-gray-500 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 border border-gray-200 dark:border-slate-800 bg-white dark:bg-[#13151f] hover:bg-gray-50 dark:hover:bg-slate-800/40 shadow-sm transition-all group select-none"
+              >
+                <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform text-indigo-500" />
+                Back to Dashboard
+              </Link>
             </div>
 
             <div className="w-full">

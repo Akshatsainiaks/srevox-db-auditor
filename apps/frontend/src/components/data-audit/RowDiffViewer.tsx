@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { Check, ShieldAlert, FileText, Lock, Filter, Eye, EyeOff } from "lucide-react";
+import { Check, ShieldAlert, FileText, Lock, Filter, Eye, EyeOff, User } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 interface RowDiffViewerProps {
@@ -9,7 +9,7 @@ interface RowDiffViewerProps {
   onClose: () => void;
 }
 
-const PII_PATTERNS = ["password", "ssn", "tax_id", "credit_card", "cvv", "api_token", "secret", "access_token", "private_key", "hashed_password", "auth_token"];
+const PII_PATTERNS = ["password", "ssn", "tax_id", "credit_card", "cvv", "api_token", "secret", "access_token", "private_key", "hashed_password", "auth_token", "card_hash"];
 
 function toArray(val: any): string[] {
   if (!val) return [];
@@ -22,12 +22,19 @@ function toArray(val: any): string[] {
       if (Array.isArray(parsed)) arr = parsed;
       else if (parsed !== null && parsed !== undefined) arr = [parsed];
     } catch {
-      arr = [val];
+      arr = val.includes(",") ? val.split(",").map(s => s.trim()) : [val];
     }
   } else if (typeof val === "object") {
     arr = Object.keys(val);
   }
   return arr.map((item) => (typeof item === "object" ? JSON.stringify(item) : String(item)));
+}
+
+function formatValue(val: any): string {
+  if (val === undefined) return "—";
+  if (val === null) return "null";
+  if (typeof val === "string") return val;
+  return JSON.stringify(val);
 }
 
 export default function RowDiffViewer({ event, onClose }: RowDiffViewerProps) {
@@ -51,12 +58,21 @@ export default function RowDiffViewer({ event, onClose }: RowDiffViewerProps) {
   } catch (e) {}
 
   const allKeys = Array.from(new Set([...Object.keys(beforeObj), ...Object.keys(afterObj)]));
-  const changedArray = toArray(event.changed_fields);
+  
+  // Calculate dynamic changed keys by comparing before and after values
+  const dynamicChangedKeys = allKeys.filter((k) => {
+    const bVal = beforeObj[k];
+    const aVal = afterObj[k];
+    return JSON.stringify(bVal) !== JSON.stringify(aVal);
+  });
+
+  const parsedChangedFields = toArray(event.changed_fields);
+  const changedArray = parsedChangedFields.length > 0 ? parsedChangedFields : dynamicChangedKeys;
   const maskedArray = toArray(event.masked_fields);
 
-  // Filter keys if showOnlyChanged is enabled
-  const displayedKeys = (showOnlyChanged && event.operation === "UPDATE" && changedArray.length > 0)
-    ? allKeys.filter((k) => changedArray.includes(k))
+  // Filter keys when showOnlyChanged is selected
+  const displayedKeys = showOnlyChanged
+    ? allKeys.filter((k) => changedArray.includes(k) || dynamicChangedKeys.includes(k))
     : allKeys;
 
   return (
@@ -70,23 +86,24 @@ export default function RowDiffViewer({ event, onClose }: RowDiffViewerProps) {
               "px-3 py-1 rounded-xl text-xs font-black uppercase tracking-wide",
               event.operation === "INSERT" && "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 border border-emerald-500/20",
               event.operation === "UPDATE" && "bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-500/20",
-              event.operation === "DELETE" && "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20"
+              event.operation === "DELETE" && "bg-red-500/10 text-red-600 dark:text-red-400 border border-red-500/20",
+              event.operation === "DDL_CHANGE" && "bg-purple-500/10 text-purple-600 dark:text-purple-400 border border-purple-500/20"
             )}>
               {event.operation}
             </span>
             <div>
               <h3 className="font-bold text-base text-gray-900 dark:text-white">
-                {String(event.database || '')}.{String(event.schema || '')}.{String(event.table || '')}
+                {String(event.database || "")}.{String(event.schema || "public")}.{String(event.table || "")}
               </h3>
               <p className="text-[11px] text-gray-500 dark:text-slate-400 font-mono mt-0.5">
-                ID: <span className="font-bold text-indigo-600 dark:text-indigo-400">{String(event.id || event.event_id || '')}</span> • PK: {typeof event.primary_key === 'object' ? JSON.stringify(event.primary_key) : String(event.primary_key || '—')} • Mode: <span className="font-bold text-indigo-500">{String(event.capture_mode || "CDC Stream")}</span>
+                ID: <span className="font-bold text-indigo-600 dark:text-indigo-400">{String(event.id || event.event_id || "")}</span> • Actor: <span className="font-bold text-indigo-500">{String(event.actor || "srevox")}</span> • Mode: <span className="font-bold text-indigo-500">{String(event.capture_mode || "log_based")}</span>
               </p>
             </div>
           </div>
 
           <button
             onClick={onClose}
-            className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-white rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors font-bold text-base"
+            className="p-2 text-gray-400 hover:text-gray-700 dark:hover:text-white rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors font-bold text-base cursor-pointer"
           >
             ✕
           </button>
@@ -106,7 +123,7 @@ export default function RowDiffViewer({ event, onClose }: RowDiffViewerProps) {
                 type="button"
                 onClick={() => setShowOnlyChanged(true)}
                 className={cn(
-                  "px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5",
+                  "px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 cursor-pointer",
                   showOnlyChanged
                     ? "bg-indigo-600 text-white shadow-xs"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -119,7 +136,7 @@ export default function RowDiffViewer({ event, onClose }: RowDiffViewerProps) {
                 type="button"
                 onClick={() => setShowOnlyChanged(false)}
                 className={cn(
-                  "px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5",
+                  "px-2.5 py-1 rounded-lg text-[10px] font-bold transition-all flex items-center gap-1.5 cursor-pointer",
                   !showOnlyChanged
                     ? "bg-indigo-600 text-white shadow-xs"
                     : "text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white"
@@ -142,7 +159,7 @@ export default function RowDiffViewer({ event, onClose }: RowDiffViewerProps) {
               <p className="font-bold">No modified columns detected for this event.</p>
               <button
                 onClick={() => setShowOnlyChanged(false)}
-                className="text-indigo-500 font-bold underline"
+                className="text-indigo-500 font-bold underline cursor-pointer"
               >
                 Click to view all {allKeys.length} table columns
               </button>
@@ -158,12 +175,12 @@ export default function RowDiffViewer({ event, onClose }: RowDiffViewerProps) {
               </thead>
               <tbody className="divide-y divide-gray-100 dark:divide-slate-800/50">
                 {displayedKeys.map((key) => {
-                  const isChanged = changedArray.includes(key);
+                  const isChanged = changedArray.includes(key) || dynamicChangedKeys.includes(key);
                   const isPii = PII_PATTERNS.some((p) => key.toLowerCase().includes(p));
                   const isMasked = maskedArray.includes(key) || isPii;
 
-                  let beforeVal = beforeObj[key] !== undefined ? JSON.stringify(beforeObj[key]) : "—";
-                  let afterVal = afterObj[key] !== undefined ? JSON.stringify(afterObj[key]) : "—";
+                  let beforeVal = beforeObj[key] !== undefined ? formatValue(beforeObj[key]) : "—";
+                  let afterVal = afterObj[key] !== undefined ? formatValue(afterObj[key]) : "—";
 
                   if (isMasked) {
                     beforeVal = "•••••••••••• [REDACTED PII]";
@@ -217,7 +234,7 @@ export default function RowDiffViewer({ event, onClose }: RowDiffViewerProps) {
           <span>Showing {displayedKeys.length} of {allKeys.length} columns</span>
           <button
             onClick={onClose}
-            className="px-5 py-2 text-xs font-bold rounded-xl bg-gray-200 dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-300 dark:hover:bg-slate-700 transition-colors"
+            className="px-5 py-2 text-xs font-bold rounded-xl bg-gray-200 dark:bg-slate-800 text-gray-700 dark:text-slate-300 hover:bg-gray-300 dark:hover:bg-slate-700 transition-colors cursor-pointer"
           >
             Close Viewer
           </button>

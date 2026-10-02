@@ -1,3 +1,115 @@
+
+export const defaultMockConnectors = [
+  {
+    connector_id: "conn_pg_prod_01",
+    name: "PostgreSQL Production Primary",
+    engine: "postgresql",
+    host: "postgres.prod.internal",
+    port: 5432,
+    database_name: "prod_db",
+    status: "active",
+    capture_mode: "log_based",
+    tables_tracked: ["users", "billing_accounts", "orders", "audit_log"],
+    events_captured: 14820,
+    created_at: "2026-08-15T10:00:00Z",
+    last_sync_at: new Date().toISOString()
+  },
+  {
+    connector_id: "conn_mysql_billing",
+    name: "MySQL Billing Cluster",
+    engine: "mysql",
+    host: "mysql-replica.prod.internal",
+    port: 3306,
+    database_name: "billing_production",
+    status: "active",
+    capture_mode: "log_based",
+    tables_tracked: ["invoices", "payment_methods", "subscriptions"],
+    events_captured: 8940,
+    created_at: "2026-08-20T11:00:00Z",
+    last_sync_at: new Date().toISOString()
+  },
+  {
+    connector_id: "conn_mongo_profiles",
+    name: "MongoDB User Profiles",
+    engine: "mongodb",
+    host: "mongo-cluster.internal",
+    port: 27017,
+    database_name: "customer_profiles",
+    status: "active",
+    capture_mode: "log_based",
+    tables_tracked: ["profiles", "auth_sessions"],
+    events_captured: 5310,
+    created_at: "2026-08-25T12:00:00Z",
+    last_sync_at: new Date().toISOString()
+  }
+];
+
+export const defaultMockAuditEvents = [
+  {
+    id: "evt_1001",
+    event_id: "evt_1001",
+    database: "prod_db",
+    schema: "public",
+    table: "users",
+    operation: "UPDATE",
+    primary_key: "usr_998124",
+    before: JSON.stringify({ user_id: "usr_998124", email: "sarah.connor@cyberdyne.io", role: "viewer", status: "active" }),
+    after: JSON.stringify({ user_id: "usr_998124", email: "sarah.connor@cyberdyne.io", role: "admin", status: "active" }),
+    changed_fields: ["role"],
+    masked_fields: [],
+    commit_timestamp: new Date(Date.now() - 45000).toISOString(),
+    record_hash: "a4f8b92d6e3c1a8f902b74d1c5e93a0b",
+    capture_mode: "log_based"
+  },
+  {
+    id: "evt_1002",
+    event_id: "evt_1002",
+    database: "billing_production",
+    schema: "public",
+    table: "payment_methods",
+    operation: "INSERT",
+    primary_key: "pm_883192",
+    before: null,
+    after: JSON.stringify({ pm_id: "pm_883192", customer_id: "cust_441", card_number: "•••• •••• •••• 4242", expiry: "12/28", cvv: "•••" }),
+    changed_fields: ["pm_id", "customer_id", "card_number", "expiry", "cvv"],
+    masked_fields: ["card_number", "cvv"],
+    commit_timestamp: new Date(Date.now() - 120000).toISOString(),
+    record_hash: "7c3d1e9a2b8f4a0c8192b4d6e8a0c2e4",
+    capture_mode: "log_based"
+  },
+  {
+    id: "evt_1003",
+    event_id: "evt_1003",
+    database: "customer_profiles",
+    schema: "public",
+    table: "profiles",
+    operation: "UPDATE",
+    primary_key: "prof_3321",
+    before: JSON.stringify({ id: "prof_3321", full_name: "Alex Mercer", ssn: "•••-••-••••", verified: false }),
+    after: JSON.stringify({ id: "prof_3321", full_name: "Alex Mercer", ssn: "•••-••-••••", verified: true }),
+    changed_fields: ["verified"],
+    masked_fields: ["ssn"],
+    commit_timestamp: new Date(Date.now() - 300000).toISOString(),
+    record_hash: "b8e1a90c2d3f4a5b6c7d8e9f0a1b2c3d",
+    capture_mode: "log_based"
+  },
+  {
+    id: "evt_1004",
+    event_id: "evt_1004",
+    database: "prod_db",
+    schema: "public",
+    table: "auth_tokens",
+    operation: "DELETE",
+    primary_key: "tok_expired_901",
+    before: JSON.stringify({ token_id: "tok_expired_901", user_id: "usr_998124", token_secret: "••••••••" }),
+    after: null,
+    changed_fields: ["token_id", "user_id", "token_secret"],
+    masked_fields: ["token_secret"],
+    commit_timestamp: new Date(Date.now() - 600000).toISOString(),
+    record_hash: "e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0",
+    capture_mode: "log_based"
+  }
+];
 // Default Mock Data for Srevox Guided Walkthroughs
 
 export const defaultMockClusters = [

@@ -3,7 +3,7 @@ import React from "react";
 import { MessageSquare, Compass } from "lucide-react";
 
 export default function FeedbackSettingsPage() {
-  const websiteUrl = process.env.NEXT_PUBLIC_WEBSITE_URL || "https://srevox-website.vercel.app";
+  const feedbackUrl = process.env.NEXT_PUBLIC_FEEDBACK_URL || "https://feedback.srevox.in";
 
   return (
     <div id="settings-feedback" className="card p-8 bg-white dark:bg-[#13151f] border border-gray-150 dark:border-slate-800/60 rounded-2xl shadow-sm space-y-6 animate-modal-slide-up text-center max-w-xl mx-auto" style={{ animationDuration: "0.2s" }}>
@@ -19,7 +19,7 @@ export default function FeedbackSettingsPage() {
 
       <div className="pt-2">
         <a
-          href={`${websiteUrl}/feedback`}
+          href={feedbackUrl}
           target="_blank"
           rel="noopener noreferrer"
           className="inline-flex items-center gap-2 bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-8 rounded-xl text-xs transition-all shadow-sm shadow-indigo-200 dark:shadow-none"

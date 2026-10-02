@@ -1,0 +1,89 @@
+# ═══════════════════════════════════════════════════════════════
+#  Srevox DB Auditor Helm Chart Configuration
+#  Version: 1.0.3
+# ═══════════════════════════════════════════════════════════════
+
+global:
+  backendSecretKey: "change_me_in_production_min_32_chars"
+  encryptionKey: "change_me_32_chars_exactly_here_"
+  frontendUrl: "http://localhost:7005"
+  apiUrl: "http://localhost:7001"
+
+# ── Image Configuration ──────────────────────────────────────
+image:
+  pullPolicy: IfNotPresent
+  registry: docker.io
+  repositoryOwner: akshatsaini08
+  tag: 1.0.3
+
+# ── API Backend Service ──────────────────────────────────────
+api:
+  replicaCount: 1
+  port: 7001
+  image: akshatsaini08/srevox-db-auditor-api:1.0.3
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# ── Frontend Console Service ─────────────────────────────────
+frontend:
+  replicaCount: 1
+  port: 7005
+  image: akshatsaini08/srevox-db-auditor-frontend:1.0.3
+  service:
+    type: ClusterIP
+    port: 7005
+  resources:
+    limits:
+      cpu: 500m
+      memory: 512Mi
+    requests:
+      cpu: 100m
+      memory: 128Mi
+
+# ── Activity Log Service (Rust) ──────────────────────────────
+activity:
+  replicaCount: 1
+  port: 7002
+  image: akshatsaini08/srevox-db-auditor-activity:1.0.3
+  resources:
+    limits:
+      cpu: 300m
+      memory: 256Mi
+    requests:
+      cpu: 50m
+      memory: 64Mi
+
+# ── Built-In PostgreSQL (Internal State) ─────────────────────
+postgres:
+  enabled: true
+  host: srevox-db-auditor-postgres
+  port: 5432
+  database: srevoxdbauditor
+  username: srevox
+  password: "srevoxdbauditor_password_change_me"
+  persistence:
+    enabled: true
+    size: 10Gi
+
+# ── Built-In Redis (Cache & PubSub) ──────────────────────────
+redis:
+  enabled: true
+  host: srevox-db-auditor-redis
+  port: 6379
+
+# ── Ingress Configuration ────────────────────────────────────
+ingress:
+  enabled: false
+  className: nginx
+  annotations: {}
+  hosts:
+    - host: dbauditor.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []

@@ -11,10 +11,11 @@ import EditUserModal from "@/components/team/EditUserModal";
 
 interface Member { user_id: string; email: string; full_name?: string; role: string; is_active: boolean; created_at: string; last_login_at?: string; }
 
-const ROLE_ICONS: Record<string,React.ElementType> = { admin: Crown, member: Shield, viewer: Eye };
+const ROLE_ICONS: Record<string,React.ElementType> = { admin: Crown, auditor: ShieldCheck, member: Shield, viewer: Eye };
 const ROLE_COLORS: Record<string,string> = {
-  admin:  "bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-500/20",
-  member: "bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20",
+  admin:   "bg-purple-50 dark:bg-purple-500/10 text-purple-700 dark:text-purple-400 border-purple-200 dark:border-purple-500/20",
+  auditor: "bg-emerald-50 dark:bg-emerald-500/10 text-emerald-700 dark:text-emerald-400 border-emerald-200 dark:border-emerald-500/20",
+  member:  "bg-blue-50 dark:bg-blue-500/10 text-blue-700 dark:text-blue-400 border-blue-200 dark:border-blue-500/20",
   viewer: "bg-gray-100 dark:bg-slate-700 text-gray-600 dark:text-slate-300 border-gray-200 dark:border-slate-600",
 };
 
@@ -124,9 +125,9 @@ export default function TeamPage() {
       {/* Role permissions */}
       <div id="team-roles-guide" className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         {[
-          { role:"Admin",  Icon:Crown,  color:"text-purple-600 dark:text-purple-400", bg:"bg-purple-50 dark:bg-purple-500/10",  perms:["Full access","Manage users","Add/remove clusters","Configure channels"] },
-          { role:"Member", Icon:Shield, color:"text-blue-600 dark:text-blue-400",     bg:"bg-blue-50 dark:bg-blue-500/10",      perms:["View everything","Acknowledge incidents","Resolve incidents","Run AI diagnosis"] },
-          { role:"Viewer", Icon:Eye,    color:"text-gray-600 dark:text-slate-400",    bg:"bg-gray-50 dark:bg-slate-800",       perms:["View dashboard","View incidents","View clusters","Read-only access"] },
+          { role:"Admin",  Icon:Crown,  color:"text-purple-600 dark:text-purple-400", bg:"bg-purple-50 dark:bg-purple-500/10",  perms:["Full organization access","Manage users & groups","Connect & configure databases","Manage retention & masking"] },
+          { role:"Member", Icon:Shield, color:"text-blue-600 dark:text-blue-400",     bg:"bg-blue-50 dark:bg-blue-500/10",      perms:["View audit ledger & CDC events","Run query audits & diagnostics","Test database connectors","Configure alert channels"] },
+          { role:"Viewer", Icon:Eye,    color:"text-gray-600 dark:text-slate-400",    bg:"bg-gray-50 dark:bg-slate-800",       perms:["View audit dashboard","Inspect CDC change events","View connected databases","Read-only ledger access"] },
         ].map(({role,Icon,color,bg,perms})=>(
           <div key={role} className="card p-4">
             <div className={`inline-flex items-center gap-2 px-2.5 py-1 rounded-xl ${bg} mb-3`}>

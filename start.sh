@@ -1,35 +1,27 @@
 #!/bin/bash
-# Srevox Quick Start Script
+# Srevox DB Auditor — Quick Start Script
 # Run: chmod +x start.sh && ./start.sh
 
-echo "🔭 Starting Srevox..."
+echo "⚡ Starting Srevox DB Auditor..."
 
 # Check .env exists
 if [ ! -f .env ]; then
   cp .env.example .env
-  echo "⚠️  Created .env from .env.example — please update with your credentials"
+  echo "⚠️ Created .env from .env.example"
 fi
 
 # Load env
 export $(cat .env | grep -v ^# | xargs)
 
 echo ""
-echo "Starting services... Open 4 terminal tabs and run:"
+echo "Starting services... Open 2 terminal tabs and run:"
 echo ""
-echo "Tab 1 — API (Node.js):"
-echo "  cd apps/api && npm install && npm run dev"
+echo "Tab 1 — API Backend (Fastify):"
+echo "  cd apps/api && npm run dev"
+echo "  Runs on: http://localhost:7001"
 echo ""
-echo "Tab 2 — AI Service (Python):"
-echo "  cd apps/backend && pip install -r requirements.txt && uvicorn ai_service:app --port 8000 --reload"
+echo "Tab 2 — Frontend Console (Next.js):"
+echo "  cd apps/frontend && npm run dev"
+echo "  Runs on: http://localhost:7005"
 echo ""
-echo "Tab 3 — Alert Worker (Node.js):"
-echo "  cd apps/alert-worker && npm install && npm run dev"
-echo ""
-echo "Tab 4 — Frontend (Next.js):"
-echo "  cd apps/frontend && npm install && npm run dev"
-echo ""
-echo "Tab 5 — Activity Audit Service (Rust):"
-echo "  cd apps/activity-service && cargo run"
-echo ""
-echo "Then open: http://localhost:3000"
 echo "Login: admin@srevox.local / admin123"

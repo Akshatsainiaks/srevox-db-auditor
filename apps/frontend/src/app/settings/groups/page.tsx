@@ -6,10 +6,10 @@ import {
   Plus, Trash2, Users, Search, BookOpen, ShieldCheck
 } from "lucide-react";
 import { api } from "@/lib/api";
-import { getUser, hasPermission, CAN, PERMISSION_IDS } from "@/lib/auth";
+import { getUser, hasPermission, refreshUser, CAN, PERMISSION_IDS } from "@/lib/auth";
 import { useToast } from "@/components/Toast";
 import { createPortal } from "react-dom";
-import PermissionsGuideModal from "@/components/settings/more-settings/PermissionsGuideModal";
+import PermissionsGuideModal from "@/components/settings/PermissionsGuideModal";
 
 interface Member {
   user_id: string;
@@ -40,76 +40,64 @@ interface Group {
 
 const CATEGORIES = [
   {
-    title: "Incidents",
+    title: "Database Connectors & CDC Streams",
     permissions: [
-      { key: "viewIncidents", label: "View Incidents", desc: "Read and list open/resolved incident events" },
-      { key: "acknowledgeIncident", label: "Acknowledge Incidents", desc: "Claim ownership of active incidents" },
-      { key: "resolveIncident", label: "Resolve Incidents", desc: "Mark incident crashes as resolved" },
-      { key: "runDiagnosis", label: "AI Diagnosis & Logs", desc: "View pod logs and trigger AI analysis" },
-      { key: "deleteIncident", label: "Delete Incidents", desc: "Permanently delete incident history" },
+      { key: "viewConnectors", label: "View Databases & Connectors", desc: "List connected database clusters, replication slots, and health status" },
+      { key: "addConnector", label: "Connect & Edit Databases", desc: "Register new database connections or update connection credentials" },
+      { key: "deleteConnector", label: "Disconnect Databases", desc: "Remove database connectors and terminate WAL replication stream" },
+      { key: "testConnector", label: "Test Connection Health", desc: "Send ping tests to database endpoints and inspect replication latency" },
+      { key: "viewStream", label: "View Live CDC Stream", desc: "Access real-time WAL event feeds, SSE streams, and change ledgers" },
     ]
   },
   {
-    title: "Clusters",
+    title: "Audit Ledgers & Row Diffs",
     permissions: [
-      { key: "viewClusters", label: "View Clusters", desc: "List kubernetes clusters and health status" },
-      { key: "addCluster", label: "Add & Edit Clusters", desc: "Register new clusters or edit credentials" },
-      { key: "deleteCluster", label: "Delete Clusters", desc: "Permanently delete cluster configurations" },
+      { key: "viewRowDiff", label: "Inspect Row Mutations", desc: "Compare column before/after diffs across database tables" },
+      { key: "viewPii", label: "View Sensitive PII Fields", desc: "Inspect unmasked values for SSN, credit cards, and secrets" },
+      { key: "exportAudit", label: "Export Compliance Ledgers", desc: "Download signed audit reports in CSV and JSON formats" },
+      { key: "purgeAudit", label: "Manual Database Purge", desc: "Trigger immediate manual purge of historical audit records" },
     ]
   },
   {
-    title: "Channels",
+    title: "Data Retention & Storage",
     permissions: [
-      { key: "viewChannels", label: "View Channels", desc: "List Slack, Email, and webhook notification channels" },
-      { key: "addChannel", label: "Add & Edit Channels", desc: "Create new delivery channels or edit webhook details" },
-      { key: "deleteChannel", label: "Delete Channels", desc: "Permanently delete alert channels" },
-      { key: "testChannel", label: "Test Channels", desc: "Send test payloads through configured integrations" },
+      { key: "changeRetention", label: "Data Retention Policies", desc: "Configure automated purge windows for CDC mutation ledgers and logs" },
+      { key: "clearRetentionHistory", label: "Clear Run History", desc: "Clear purge execution run history logs" },
     ]
   },
   {
-    title: "Alert Rules",
+    title: "Masking & Compliance Rules",
     permissions: [
-      { key: "viewRules", label: "View Alert Rules", desc: "View cluster alerting policies" },
-      { key: "addRule", label: "Add & Edit Rules", desc: "Create, edit, or mute/unmute alert rules" },
-      { key: "deleteRule", label: "Delete Rules", desc: "Permanently delete alert rules" },
-      { key: "toggleRule", label: "Toggle Rules", desc: "Quickly enable/disable specific policies" },
+      { key: "viewMaskingRules", label: "View Masking Policies", desc: "Inspect active in-memory PII redaction and column masking rules" },
+      { key: "manageMaskingRules", label: "Configure Masking Rules", desc: "Create, edit, or delete sensitive column regex masking triggers" },
+    ]
+  },
+  {
+    title: "Notification Channels & Alerts",
+    permissions: [
+      { key: "viewChannels", label: "View Alert Channels", desc: "List Slack, Teams, Email, and Webhook notification channels" },
+      { key: "addChannel", label: "Add & Edit Channels", desc: "Register new notification channels or update webhook endpoints" },
+      { key: "deleteChannel", label: "Delete Alert Channels", desc: "Permanently delete configured notification channels" },
+      { key: "testChannel", label: "Test Channel Delivery", desc: "Send simulated audit alert payloads through integrations" },
     ]
   },
   {
     title: "Team & Access Control",
     permissions: [
-      { key: "viewTeam", label: "View Team", desc: "View organization user lists" },
-      { key: "inviteUser", label: "Invite Members", desc: "Send organization invites to new users" },
+      { key: "viewTeam", label: "View Team Directory", desc: "View organization members and assigned role permissions" },
+      { key: "inviteUser", label: "Invite Team Members", desc: "Send organization invites with assigned access roles" },
       { key: "removeUser", label: "Remove Members", desc: "Revoke organization access from members" },
-      { key: "changeRole", label: "Modify Roles & Permissions", desc: "Update user roles and custom permissions" },
+      { key: "changeRole", label: "Modify Roles & Overrides", desc: "Update user roles and granular custom permissions" },
       { key: "changeSudoLock", label: "Sudo Security Passcode", desc: "Modify organization-wide Sudo Security Lock passcode" },
-      { key: "viewApiDocs", label: "API Credentials & Docs", desc: "Access credentials, endpoints and documentation details" },
+      { key: "viewApiDocs", label: "API Credentials & Docs", desc: "Access CDC ingestion credentials, endpoints, and docs" },
     ]
   },
   {
-    title: "Service Routing",
+    title: "Analytics & System Logs",
     permissions: [
-      { key: "viewServiceOwners", label: "View Service Routing", desc: "Read and list service owner routing rules" },
-      { key: "addServiceOwner", label: "Add & Edit Service Owners", desc: "Create, assign, or edit service routing settings" },
-      { key: "deleteServiceOwner", label: "Delete Service Owners", desc: "Remove service owner routing assignments" }
-    ]
-  },
-  {
-    title: "Machines & Host Nodes",
-    permissions: [
-      { key: "viewMachines", label: "View Machines & Host Nodes", desc: "Read and list Linux machine telemetry and system metrics" },
-      { key: "addMachine", label: "Connect & Add Host Machines", desc: "Generate agent installation tokens and connect host nodes" },
-      { key: "deleteMachine", label: "Delete Host Machines", desc: "Remove machine monitors and disconnect agent telemetry" },
-    ]
-  },
-  {
-    title: "Analytics & System",
-    permissions: [
-      { key: "viewAnalytics", label: "View Analytics Page", desc: "Access high-level crash reports and charts" },
-      { key: "viewActivityLog", label: "View Audit Activity Logs", desc: "Access platform-wide security audit logs and traces" },
-      { key: "changeRetention", label: "Data Retention Policies", desc: "Manage database retention purge intervals for audit log ledgers and incident logs" },
-      { key: "systemAlerts", label: "System Alerts Configuration", desc: "Configure organization-wide system alert routing and event triggers" },
-    ]
+      { key: "viewAnalytics", label: "View Analytics & Metrics", desc: "Access high-level mutation frequency and audit metrics" },
+      { key: "viewActivityLog", label: "View System Activity Logs", desc: "Access platform security audit traces and admin logs" },
+          ]
   }
 ];
 
@@ -258,6 +246,7 @@ export default function GroupsPage() {
       success("Group settings updated successfully");
       setSelectedGroup(null);
       loadGroups();
+      await refreshUser();
     } catch (err: any) {
       error(err.response?.data?.detail || "Failed to update group settings");
     } finally {

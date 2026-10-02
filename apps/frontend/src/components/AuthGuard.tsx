@@ -28,7 +28,7 @@ export default function AuthGuard({ children }: { children: React.ReactNode }) {
           <div className="animate-pulse">
             <SrevoxLogo size={48} />
           </div>
-          <span className="text-sm text-gray-400">Loading Srevox...</span>
+          <span className="text-sm text-gray-400">Loading Srevox DB Auditor...</span>
         </div>
       </div>
     );

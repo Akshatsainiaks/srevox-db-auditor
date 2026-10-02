@@ -123,3 +123,21 @@ export async function copyToClipboard(text: string): Promise<boolean> {
   }
 }
 
+
+export interface DbConnector {
+  connector_id: string;
+  id?: string;
+  name: string;
+  db_type: string;
+  capture_mode: string;
+  host: string;
+  port: number;
+  database_name: string;
+  username?: string;
+  status: string;
+  audit_scope?: string;
+  target_tables?: string | null;
+  enable_pii_masking?: boolean;
+  last_sync_at?: string;
+  created_at: string;
+}

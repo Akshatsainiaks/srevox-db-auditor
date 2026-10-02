@@ -1,12 +1,13 @@
 {
-  "name": "srevox-frontend",
-  "version": "0.1.37",
+  "name": "srevox-db-auditor-frontend",
+  "version": "1.0.3",
   "private": true,
   "scripts": {
-    "dev": "next dev",
+    "dev": "next dev -p 7005",
     "build": "next build",
-    "start": "next start",
-    "type-check": "tsc --noEmit"
+    "start": "next start -p 7005",
+    "type-check": "tsc --noEmit",
+    "bump-version": "node ../../scripts/bump-version.js"
   },
   "dependencies": {
     "@types/js-cookie": "^3.0.6",

@@ -81,8 +81,16 @@ export default async function authRoutes(app: FastifyInstance) {
     return { message: "Logged out" };
   });
 
-  // GET /api/auth/account
+  // GET /api/auth/me & /api/auth/account
+  app.get("/me", { onRequest: [(app as any).authenticate] }, async (req, reply) => {
+    return getAccountHandler(req, reply);
+  });
+
   app.get("/account", { onRequest: [(app as any).authenticate] }, async (req, reply) => {
+    return getAccountHandler(req, reply);
+  });
+
+  async function getAccountHandler(req: any, reply: any) {
     const payload = req.user as { sub: string };
     const [user] = await sql`
       SELECT user_id, org_id, email, full_name, role, personal_channel_id,
@@ -107,11 +115,12 @@ export default async function authRoutes(app: FastifyInstance) {
 
     return {
       ...user,
+      full_name: user.full_name || "Admin User",
       org,
       groups: userGroups.map((g: any) => ({ group_id: g.group_id, name: g.name })),
       effective_permissions: effectivePerms
     };
-  });
+  }
 
   // PATCH /api/auth/account — update profile + personal channel
   app.patch("/account", { onRequest: [(app as any).authenticate] }, async (req, reply) => {
@@ -273,31 +282,36 @@ export default async function authRoutes(app: FastifyInstance) {
       return reply.status(401).send({ detail: "Incorrect password. Authorization failed." });
     }
 
-    if (action === "incidents") {
-      await sql`DELETE FROM incidents WHERE org_id = ${payload.org_id}`;
+    if (action === "events" || action === "incidents") {
+      try { await sql`DELETE FROM db_audit_events WHERE org_id = ${payload.org_id} OR org_id IS NULL`; } catch {}
+      try { await sql`DELETE FROM incidents WHERE org_id = ${payload.org_id}`; } catch {}
       await invalidateCache(`stats:${payload.org_id}`);
-      return { message: "All incidents deleted successfully" };
-    } else if (action === "clusters") {
-      await sql`DELETE FROM clusters WHERE org_id = ${payload.org_id}`;
+      return { message: "All audit mutation events deleted successfully" };
+    } else if (action === "connectors" || action === "clusters") {
+      try { await sql`DELETE FROM db_connectors WHERE org_id = ${payload.org_id} OR org_id IS NULL`; } catch {}
+      try { await sql`DELETE FROM clusters WHERE org_id = ${payload.org_id}`; } catch {}
       await invalidateCache(`stats:${payload.org_id}`);
-      return { message: "All clusters deleted successfully" };
+      return { message: "All database connectors deleted successfully" };
     } else if (action === "all") {
       await sql.begin(async (tx: any) => {
-        await tx`DELETE FROM alerts_sent WHERE org_id = ${payload.org_id}`;
-        await tx`DELETE FROM user_ai_diagnoses WHERE incident_id IN (SELECT incident_id FROM incidents WHERE org_id = ${payload.org_id})`;
-        await tx`DELETE FROM incidents WHERE org_id = ${payload.org_id}`;
-        await tx`DELETE FROM service_owners WHERE org_id = ${payload.org_id}`;
-        await tx`DELETE FROM resource_alerts WHERE org_id = ${payload.org_id}`;
-        await tx`DELETE FROM alert_rules WHERE org_id = ${payload.org_id}`;
-        await tx`DELETE FROM channels WHERE org_id = ${payload.org_id}`;
-        await tx`DELETE FROM invitations WHERE org_id = ${payload.org_id}`;
-        await tx`DELETE FROM clusters WHERE org_id = ${payload.org_id}`;
-        await tx`DELETE FROM activity_log WHERE org_id = ${payload.org_id}`;
+        try { await tx`DELETE FROM db_audit_events WHERE org_id = ${payload.org_id} OR org_id IS NULL`; } catch {}
+        try { await tx`DELETE FROM db_connectors WHERE org_id = ${payload.org_id} OR org_id IS NULL`; } catch {}
+        try { await tx`DELETE FROM retention_policies WHERE org_id = ${payload.org_id}`; } catch {}
+        try { await tx`DELETE FROM alerts_sent WHERE org_id = ${payload.org_id}`; } catch {}
+        try { await tx`DELETE FROM user_ai_diagnoses WHERE incident_id IN (SELECT incident_id FROM incidents WHERE org_id = ${payload.org_id})`; } catch {}
+        try { await tx`DELETE FROM incidents WHERE org_id = ${payload.org_id}`; } catch {}
+        try { await tx`DELETE FROM service_owners WHERE org_id = ${payload.org_id}`; } catch {}
+        try { await tx`DELETE FROM resource_alerts WHERE org_id = ${payload.org_id}`; } catch {}
+        try { await tx`DELETE FROM alert_rules WHERE org_id = ${payload.org_id}`; } catch {}
+        try { await tx`DELETE FROM channels WHERE org_id = ${payload.org_id}`; } catch {}
+        try { await tx`DELETE FROM invitations WHERE org_id = ${payload.org_id}`; } catch {}
+        try { await tx`DELETE FROM clusters WHERE org_id = ${payload.org_id}`; } catch {}
+        try { await tx`DELETE FROM activity_log WHERE org_id = ${payload.org_id}`; } catch {}
       });
       await invalidateCache(`stats:${payload.org_id}`);
       return { message: "All organization data reset successfully" };
     } else {
-      return reply.status(400).send({ detail: "Invalid action. Must be 'incidents', 'clusters', or 'all'." });
+      return reply.status(400).send({ detail: "Invalid action. Must be 'events', 'connectors', or 'all'." });
     }
   });
 

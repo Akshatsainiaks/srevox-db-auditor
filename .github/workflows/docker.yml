@@ -40,17 +40,9 @@ jobs:
           context: ./apps/api
           push: true
           tags: |
-            ghcr.io/akshatsainiaks/srevox-api:${{ steps.version.outputs.tag }}
-            akshatsaini08/srevox-api:${{ steps.version.outputs.tag }}
-
-      - name: Build & Push Worker
-        uses: docker/build-push-action@v5
-        with:
-          context: ./apps/alert-worker
-          push: true
-          tags: |
-            ghcr.io/akshatsainiaks/srevox-worker:${{ steps.version.outputs.tag }}
-            akshatsaini08/srevox-worker:${{ steps.version.outputs.tag }}
+            ghcr.io/akshatsainiaks/srevox-db-auditor-api:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-db-auditor-api:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-db-auditor-api:latest
 
       - name: Build & Push Frontend
         uses: docker/build-push-action@v5
@@ -58,17 +50,9 @@ jobs:
           context: ./apps/frontend
           push: true
           tags: |
-            ghcr.io/akshatsainiaks/srevox-frontend:${{ steps.version.outputs.tag }}
-            akshatsaini08/srevox-frontend:${{ steps.version.outputs.tag }}
-
-      - name: Build & Push AI Service
-        uses: docker/build-push-action@v5
-        with:
-          context: ./apps/backend
-          push: true
-          tags: |
-            ghcr.io/akshatsainiaks/srevox-ai:${{ steps.version.outputs.tag }}
-            akshatsaini08/srevox-ai:${{ steps.version.outputs.tag }}
+            ghcr.io/akshatsainiaks/srevox-db-auditor-frontend:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-db-auditor-frontend:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-db-auditor-frontend:latest
 
       - name: Build & Push Activity Service
         uses: docker/build-push-action@v5
@@ -76,33 +60,28 @@ jobs:
           context: ./apps/activity-service
           push: true
           tags: |
-            ghcr.io/akshatsainiaks/srevox-activity:${{ steps.version.outputs.tag }}
-            akshatsaini08/srevox-activity:${{ steps.version.outputs.tag }}
-
-      - name: Build & Push Agent
-        uses: docker/build-push-action@v5
-        with:
-          context: ./apps/watcher
-          push: true
-          tags: |
-            ghcr.io/akshatsainiaks/srevox-agent:${{ steps.version.outputs.tag }}
-            akshatsaini08/srevox-agent:${{ steps.version.outputs.tag }}
+            ghcr.io/akshatsainiaks/srevox-db-auditor-activity:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-db-auditor-activity:${{ steps.version.outputs.tag }}
+            akshatsaini08/srevox-db-auditor-activity:latest
 
   release:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
-      - name: Create release in srevox-setup
+      - name: Create release in srevox-db-auditor
         uses: softprops/action-gh-release@v2
         with:
-          repository: Akshatsainiaks/srevox-setup
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body: |
-            New version ${{ github.ref_name }} released.
+            ## Srevox DB Auditor ${{ github.ref_name }} Released 🚀
 
-            To update your self-hosted instance:
-            1. Edit your docker-compose.yml and change all image tags to ${{ github.ref_name }}
-            2. Run: docker compose pull
-            3. Run: docker compose up -d
-          token: ${{ secrets.DEPLOY_REPO_TOKEN }}
+            Enterprise Database Audit, DDL Tracking & CDC Intelligence.
+
+            ### Quick Update:
+            ```bash
+            docker compose pull
+            docker compose up -d
+            ```

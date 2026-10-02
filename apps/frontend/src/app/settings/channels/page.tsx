@@ -335,16 +335,7 @@ export default function ChannelsPage() {
                       <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-gray-50 dark:bg-slate-900 text-gray-400 dark:text-slate-500 border border-gray-150 dark:border-slate-800 uppercase tracking-wide">
                         {CHANNEL_LABELS[ch.type as ChannelType] || ch.type}
                       </span>
-                      {ch.type === "email" && (
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-indigo-50 dark:bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 border border-indigo-100 dark:border-indigo-500/20 uppercase tracking-wide">
-                          {(ch as any).channel_type === "service_owner" ? "Service Owner" : "Normal"}
-                        </span>
-                      )}
-                      {ch.type === "email" && (ch as any).channel_type === "service_owner" && (ch as any).is_global_default && (
-                        <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-500/20 uppercase tracking-wide">
-                          Global Default
-                        </span>
-                      )}
+
                       {!ch.enabled && (
                         <span className="text-[9px] font-bold px-2 py-0.5 rounded-md bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-500/20 uppercase tracking-wide">
                           paused
@@ -352,11 +343,7 @@ export default function ChannelsPage() {
                       )}
                     </div>
                     
-                    {ch.type === "email" && (ch as any).channel_type === "service_owner" && (
-                      <div className="text-[10px] font-medium text-gray-450 dark:text-slate-500 mt-1">
-                        Used by {serviceCount} service(s)
-                      </div>
-                    )}
+
                     
                     <div className="text-[10px] text-gray-450 dark:text-slate-500">
                       Configured {timeAgo(ch.created_at)}
@@ -416,7 +403,7 @@ export default function ChannelsPage() {
                         )}
                         {hasPermission(me, "deleteChannel") && (
                           <button
-                            onClick={() => remove(ch.channel_id, ch.name, serviceCount)}
+                            onClick={() => remove(ch.channel_id, ch.name, 0)}
                             className="w-7 h-7 flex items-center justify-center rounded-lg text-gray-300 dark:text-slate-650 hover:text-red-500 hover:bg-red-50 dark:hover:bg-red-500/10 transition-colors shrink-0"
                             title="Delete alert channel"
                           >

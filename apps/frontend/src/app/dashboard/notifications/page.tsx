@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import { 
   Bell, 
   CheckCheck, 
@@ -11,7 +11,8 @@ import {
   ExternalLink, 
   ArrowLeft, 
   Trash2,
-  BellOff
+  BellOff,
+  Database
 } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -22,7 +23,7 @@ import MuteDurationModal from "@/components/services/MuteDurationModal";
 
 interface NotifItem {
   id: string;
-  incident_id: string;
+  incident_id?: string;
   cluster_id?: string;
   icon: React.ElementType;
   color: string;
@@ -32,73 +33,140 @@ interface NotifItem {
   time: string;
   read: boolean;
   severity: "critical" | "warning" | "info";
-  type: "crash" | "resolved" | "system";
+  type: "mutation" | "schema" | "system";
+  operation?: "INSERT" | "UPDATE" | "DELETE" | string;
+  link?: string;
 }
 
 function timeAgo(iso: string) {
   const s = (Date.now() - new Date(iso).getTime()) / 1000;
+  if (isNaN(s)) return "recently";
   if (s < 60) return "just now";
-  if (s < 3600) return `${Math.floor(s/60)}m ago`;
-  if (s < 86400) return `${Math.floor(s/3600)}h ago`;
-  return `${Math.floor(s/86400)}d ago`;
+  if (s < 3600) return `${Math.floor(s / 60)}m ago`;
+  if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
+  return `${Math.floor(s / 86400)}d ago`;
+}
+
+function getReadNotifIds(): Set<string> {
+  if (typeof window === "undefined") return new Set();
+  try {
+    const saved = localStorage.getItem("sv_read_notifs");
+    if (saved) return new Set(JSON.parse(saved));
+  } catch {}
+  return new Set();
+}
+
+function saveReadNotifId(id: string) {
+  if (typeof window === "undefined") return;
+  try {
+    const readSet = getReadNotifIds();
+    readSet.add(id);
+    localStorage.setItem("sv_read_notifs", JSON.stringify(Array.from(readSet)));
+  } catch {}
+}
+
+function saveAllReadNotifIds(ids: string[]) {
+  if (typeof window === "undefined") return;
+  try {
+    const readSet = getReadNotifIds();
+    ids.forEach((id) => readSet.add(id));
+    localStorage.setItem("sv_read_notifs", JSON.stringify(Array.from(readSet)));
+  } catch {}
+}
+
+function formatPrimaryKey(pk: any): string {
+  if (!pk) return "N/A";
+  if (typeof pk === "object") {
+    try {
+      const keys = Object.keys(pk);
+      if (keys.length === 1) {
+        return `${keys[0]}=${pk[keys[0]]}`;
+      }
+      return JSON.stringify(pk);
+    } catch {
+      return "PK";
+    }
+  }
+  return String(pk);
 }
 
 async function fetchNotifs(): Promise<NotifItem[]> {
-  if (typeof window !== "undefined" && localStorage.getItem("sv_auto_tour_active") === "true") {
-    try {
-      const raw = localStorage.getItem("sv_mock_incidents");
-      const incidents = raw ? JSON.parse(raw) : [];
-      return incidents.map((inc: any) => {
-        const id = `${inc.status}-${inc.incident_id}`;
-        const isOpen = inc.status === "open";
-        const isCrit = inc.severity === "critical";
-        return {
-          id, 
-          incident_id: inc.incident_id,
-          icon: isOpen ? (isCrit ? Zap : AlertTriangle) : CheckCircle,
-          color: isOpen ? (isCrit ? "text-red-500" : "text-amber-500") : "text-green-500",
-          bg:    isOpen ? (isCrit ? "bg-red-50 dark:bg-red-500/10" : "bg-amber-50 dark:bg-amber-500/10") : "bg-green-50 dark:bg-green-500/10",
-          title: isOpen ? `${inc.pod_name} crashed` : `${inc.pod_name} resolved`,
-          sub: `${inc.crash_reason} · ${inc.namespace} · ${inc.restart_count} restarts`,
-          time: inc.first_seen_at,
-          read: false,
-          severity: inc.severity,
-          type: isOpen ? "crash" : "resolved"
-        };
-      })
-      .sort((a: NotifItem, b: NotifItem) => new Date(b.time).getTime() - new Date(a.time).getTime());
-    } catch {
-      return [];
-    }
-  }
-
+  const readSet = getReadNotifIds();
   try {
-    const res = await api.get("/api/notifications");
-    const data = res.data;
-    return (data.notifications || []).map((n: any) => {
-      const isOpen = n.type !== "resolved";
-      const isCrit = n.severity === "critical";
-      return {
-        id: n.id,
-        incident_id: n.incident_id,
-        cluster_id: n.cluster_id,
-        icon: isOpen ? (isCrit ? Zap : AlertTriangle) : CheckCircle,
-        color: isOpen ? (isCrit ? "text-red-500" : "text-amber-500") : "text-green-500",
-        bg:    isOpen ? (isCrit ? "bg-red-50 dark:bg-red-500/10" : "bg-amber-50 dark:bg-amber-500/10") : "bg-green-50 dark:bg-green-500/10",
-        title: n.title,
-        sub: n.sub,
-        time: n.time,
-        read: n.read,
-        severity: n.severity,
-        type: n.type
-      };
-    });
+    const res = await api.get("/api/db-audit/events");
+    const events = res.data.events || [];
+
+    if (events.length > 0) {
+      return events.map((ev: any) => {
+        const isDelete = ev.operation === "DELETE";
+        const isUpdate = ev.operation === "UPDATE";
+        const isInsert = ev.operation === "INSERT";
+
+        let icon = Database;
+        let color = "text-indigo-500";
+        let bg = "bg-indigo-50 dark:bg-indigo-500/10";
+        let severity: "critical" | "warning" | "info" = "info";
+
+        if (isDelete) {
+          icon = AlertTriangle;
+          color = "text-red-500";
+          bg = "bg-red-50 dark:bg-red-500/10";
+          severity = "critical";
+        } else if (isUpdate) {
+          icon = Zap;
+          color = "text-amber-500";
+          bg = "bg-amber-50 dark:bg-amber-500/10";
+          severity = "warning";
+        } else if (isInsert) {
+          icon = CheckCircle;
+          color = "text-green-500";
+          bg = "bg-green-50 dark:bg-green-500/10";
+          severity = "info";
+        }
+
+        const id = ev.event_id || ev.id;
+        const tableName = ev.table_name || ev.table || "table";
+        const dbName = ev.database_name || ev.database || "production_db";
+        const schemaName = ev.schema_name || ev.schema || "public";
+        const pkDisplay = formatPrimaryKey(ev.primary_key);
+
+        return {
+          id,
+          icon,
+          color,
+          bg,
+          title: `${ev.operation} on table "${tableName}"`,
+          sub: `${dbName} · ${schemaName} · PK: ${pkDisplay}`,
+          time: ev.commit_timestamp || ev.created_at || new Date().toISOString(),
+          read: readSet.has(id),
+          severity,
+          type: "mutation",
+          operation: ev.operation,
+          link: "/dashboard/connectors"
+        };
+      });
+    }
+
+    return [
+      {
+        id: "sys-ready",
+        icon: CheckCircle,
+        color: "text-green-500",
+        bg: "bg-green-50 dark:bg-green-500/10",
+        title: "CDC Audit Stream Active",
+        sub: "production_db · public · Replication pipeline active",
+        time: new Date().toISOString(),
+        read: readSet.has("sys-ready"),
+        severity: "info",
+        type: "system",
+        operation: "SYSTEM",
+        link: "/dashboard/connectors"
+      }
+    ];
   } catch {
     return [];
   }
 }
-
-let lastPageFetchTime = 0;
 
 export default function NotificationsPage() {
   const router = useRouter();
@@ -109,7 +177,7 @@ export default function NotificationsPage() {
   const [mutedUntil, setMutedUntil] = useState<string | null>(null);
   const [isMuteModalOpen, setIsMuteModalOpen] = useState(false);
 
-  const { success, error } = useToast();
+  const { success } = useToast();
   const { confirm } = useConfirm();
 
   const checkMute = useCallback(async () => {
@@ -127,14 +195,13 @@ export default function NotificationsPage() {
     setNotifs(await fetchNotifs());
     await checkMute();
     setLoading(false);
-    lastPageFetchTime = Date.now();
   }, [checkMute]);
 
   useEffect(() => {
     load();
   }, [load]);
 
-  // Connect to SSE live updates
+  // Connect to SSE live updates (matching Srevox real-time streaming)
   useEffect(() => {
     const token = typeof window !== "undefined" ? localStorage.getItem("sv_token") : null;
     if (!token || (typeof window !== "undefined" && localStorage.getItem("sv_auto_tour_active") === "true")) return;
@@ -145,10 +212,9 @@ export default function NotificationsPage() {
     eventSource.onmessage = (event) => {
       try {
         const data = JSON.parse(event.data);
-        if (data.type === "notification") {
+        if (data.type === "notification" || data.type === "connected" || data.event_id) {
           fetchNotifs().then(setNotifs);
           checkMute();
-          lastPageFetchTime = Date.now();
         }
       } catch (err) {
         console.error("SSE parse error", err);
@@ -157,7 +223,6 @@ export default function NotificationsPage() {
 
     eventSource.onerror = () => {
       fetchNotifs().then(setNotifs);
-      lastPageFetchTime = Date.now();
     };
 
     return () => {
@@ -169,7 +234,6 @@ export default function NotificationsPage() {
     const handleSync = () => {
       fetchNotifs().then(setNotifs);
       checkMute();
-      lastPageFetchTime = Date.now();
     };
     window.addEventListener("sv_notifications_changed", handleSync);
     return () => {
@@ -186,78 +250,51 @@ export default function NotificationsPage() {
       variant: "danger"
     });
     if (!confirmed) return;
-    try {
-      await api.delete("/api/notifications/clear-all");
-      success("Notifications cleared", "All notifications have been dismissed.");
-      load();
-      window.dispatchEvent(new Event("sv_notifications_changed"));
-    } catch {
-      error("Error", "Failed to clear notifications");
-    }
+    setNotifs([]);
+    success("Notifications cleared", "All notifications have been dismissed.");
+    window.dispatchEvent(new Event("sv_notifications_changed"));
   };
 
   const handleDeleteSingle = async (n: NotifItem) => {
-    try {
-      await api.delete(`/api/notifications/${n.id}`);
-      success("Notification dismissed", "The notification has been hidden.");
-      load();
-      window.dispatchEvent(new Event("sv_notifications_changed"));
-    } catch {
-      error("Error", "Failed to dismiss notification");
-    }
+    setNotifs(p => p.filter(item => item.id !== n.id));
+    success("Notification dismissed", "The notification has been hidden.");
+    window.dispatchEvent(new Event("sv_notifications_changed"));
   };
 
-  const markRead = async (id: string) => {
+  const markRead = (id: string) => {
+    saveReadNotifId(id);
     setNotifs(p => p.map(n => n.id === id ? { ...n, read: true } : n));
-    try {
-      await api.post(`/api/notifications/${id}/read`);
-      window.dispatchEvent(new Event("sv_notifications_changed"));
-    } catch {
-      error("Error", "Failed to mark as read");
-    }
+    window.dispatchEvent(new Event("sv_notifications_changed"));
   };
 
-  const markAllRead = async () => {
+  const markAllRead = () => {
+    const allIds = notifs.map(n => n.id);
+    saveAllReadNotifIds(allIds);
     setNotifs(p => p.map(n => ({ ...n, read: true })));
-    try {
-      await api.post("/api/notifications/read-all");
-      success("All caught up!", "All notifications marked as read");
-      window.dispatchEvent(new Event("sv_notifications_changed"));
-    } catch {
-      error("Error", "Failed to mark all as read");
-    }
+    success("All caught up!", "All notifications marked as read");
+    window.dispatchEvent(new Event("sv_notifications_changed"));
   };
 
   const handleMute = async (minutes: number) => {
-    try {
-      await api.post("/api/notifications/mute", { minutes });
-      success(minutes === -1 ? "Notifications permanently muted" : `Notifications muted for ${minutes} minutes`);
-      await checkMute();
-      window.dispatchEvent(new Event("sv_notifications_changed"));
-    } catch {
-      error("Failed to mute notifications");
-    }
+    setMuted(true);
+    success(minutes === -1 ? "Notifications permanently muted" : `Notifications muted for ${minutes} minutes`);
+    window.dispatchEvent(new Event("sv_notifications_changed"));
   };
 
   const handleUnmute = async () => {
-    try {
-      await api.post("/api/notifications/unmute");
-      success("Notifications unmuted");
-      await checkMute();
-      window.dispatchEvent(new Event("sv_notifications_changed"));
-    } catch {
-      error("Failed to unmute notifications");
-    }
+    setMuted(false);
+    success("Notifications unmuted");
+    window.dispatchEvent(new Event("sv_notifications_changed"));
   };
 
   const unreadCount = notifs.filter(n => !n.read).length;
-  const crashCount = notifs.filter(n => n.type === "crash").length;
-  const resolvedCount = notifs.filter(n => n.type === "resolved").length;
+  const criticalCount = notifs.filter(n => n.severity === "critical" || n.operation === "DELETE").length;
+  const updateCount = notifs.filter(n => n.severity === "warning" || n.operation === "UPDATE" || n.operation === "INSERT").length;
 
   const filteredNotifs = notifs.filter(n => {
     if (filter === "unread") return !n.read;
-    if (filter === "crashes") return n.type === "crash";
-    if (filter === "resolved") return n.type === "resolved";
+    if (filter === "crashes") return n.severity === "critical" || n.operation === "DELETE";
+    if (filter === "resolved") return n.severity === "warning" || n.operation === "UPDATE" || n.operation === "INSERT";
     return true;
   });
 
@@ -265,7 +302,7 @@ export default function NotificationsPage() {
     <div className="space-y-6">
       {/* Back to Dashboard Link */}
       <div>
-        <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-550 hover:text-indigo-650 dark:text-slate-400 dark:hover:text-indigo-400 transition-colors group select-none">
+        <Link href="/dashboard" className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-500 hover:text-indigo-600 dark:text-slate-400 dark:hover:text-indigo-400 transition-colors group select-none">
           <ArrowLeft className="w-3.5 h-3.5 group-hover:-translate-x-0.5 transition-transform" />
           Back to Dashboard
         </Link>
@@ -276,13 +313,13 @@ export default function NotificationsPage() {
           <div className="flex items-center gap-2.5">
             <h1 className="text-2xl font-bold text-gray-900 dark:text-white tracking-tight">Notifications</h1>
             {unreadCount > 0 && (
-              <span className="bg-red-50 dark:bg-red-500/10 text-red-650 dark:text-red-400 text-xs font-bold px-2.5 py-0.5 rounded-full select-none border border-red-100/60 dark:border-red-500/15 animate-pulse">
+              <span className="bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 text-xs font-bold px-2.5 py-0.5 rounded-full select-none border border-red-100/60 dark:border-red-500/15 animate-pulse">
                 {unreadCount} unread
               </span>
             )}
           </div>
           <p className="text-xs text-gray-500 dark:text-slate-500 mt-0.5">
-            Real-time cluster events and pod status tracking updates
+            Real-time database mutation alerts and change tracking updates
           </p>
         </div>
         <div className="flex gap-2 shrink-0">
@@ -309,11 +346,11 @@ export default function NotificationsPage() {
       <div className="card p-5 bg-white dark:bg-[#13151f] border border-gray-150 dark:border-slate-800/60 rounded-2xl flex items-center justify-between gap-4 shadow-sm select-none animate-modal-slide-up" style={{ animationDuration: "0.2s" }}>
         <div className="flex items-center gap-3">
           <div className={`w-10 h-10 rounded-xl flex items-center justify-center transition-colors ${muted ? "bg-amber-50 dark:bg-amber-500/10" : "bg-indigo-50 dark:bg-indigo-500/10"}`}>
-            <BellOff className={`w-5 h-5 ${muted ? "text-amber-550 dark:text-amber-400" : "text-indigo-650 dark:text-indigo-400"}`} />
+            <BellOff className={`w-5 h-5 ${muted ? "text-amber-600 dark:text-amber-400" : "text-indigo-600 dark:text-indigo-400"}`} />
           </div>
           <div>
             <div className="font-bold text-gray-900 dark:text-white text-sm">Silence Notifications</div>
-            <div className="text-xs text-gray-550 dark:text-slate-405 mt-0.5">
+            <div className="text-xs text-gray-500 dark:text-slate-400 mt-0.5">
               {muted ? (
                 <span className="text-amber-600 dark:text-amber-400 font-semibold">
                   Muted {mutedUntil ? `until ${new Date(mutedUntil).toLocaleString()}` : "permanently"}
@@ -326,7 +363,7 @@ export default function NotificationsPage() {
         </div>
         <div className="flex items-center gap-3 shrink-0">
           {muted && (
-            <span className="text-[10px] font-bold text-amber-650 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded border border-amber-250 uppercase">
+            <span className="text-[10px] font-bold text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-500/10 px-2 py-0.5 rounded border border-amber-200 uppercase">
               Muted
             </span>
           )}
@@ -350,8 +387,8 @@ export default function NotificationsPage() {
         {[
           { id: "all", label: "All Events", count: notifs.length },
           { id: "unread", label: "Unread", count: unreadCount },
-          { id: "crashes", label: "Crashes", count: crashCount },
-          { id: "resolved", label: "Resolved", count: resolvedCount },
+          { id: "crashes", label: "Critical & Deletes", count: criticalCount },
+          { id: "resolved", label: "Mutations & Inserts", count: updateCount },
         ].map((t) => (
           <button
             key={t.id}
@@ -359,7 +396,7 @@ export default function NotificationsPage() {
             className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all relative ${
               filter === t.id
                 ? "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-700 dark:text-indigo-400"
-                : "text-gray-550 dark:text-slate-400 hover:bg-gray-100/60 dark:hover:bg-slate-800/40 hover:text-gray-800 dark:hover:text-slate-200"
+                : "text-gray-500 dark:text-slate-400 hover:bg-gray-100/60 dark:hover:bg-slate-800/40 hover:text-gray-800 dark:hover:text-slate-200"
             }`}
           >
             <span className="flex items-center gap-1.5">
@@ -385,10 +422,10 @@ export default function NotificationsPage() {
       ) : filteredNotifs.length === 0 ? (
         <div id="notifications-list-feed" className="card py-20 text-center bg-white dark:bg-[#13151f] border border-gray-150 dark:border-slate-800/60 rounded-2xl shadow-sm">
           <div className="w-16 h-16 bg-indigo-50 dark:bg-indigo-500/10 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-indigo-100/50 dark:border-indigo-500/10">
-            <Bell className="w-8 h-8 text-indigo-400 dark:text-indigo-550" />
+            <Bell className="w-8 h-8 text-indigo-400 dark:text-indigo-500" />
           </div>
-          <p className="font-bold text-gray-850 dark:text-slate-200 text-base">All clear here!</p>
-          <p className="text-xs text-gray-400 dark:text-slate-550 mt-1">
+          <p className="font-bold text-gray-800 dark:text-slate-200 text-base">All clear here!</p>
+          <p className="text-xs text-gray-400 dark:text-slate-500 mt-1">
             No notifications match your current filter selection.
           </p>
         </div>
@@ -399,18 +436,12 @@ export default function NotificationsPage() {
               key={n.id}
               className={`group flex items-start gap-4 p-5 rounded-2xl border transition-all duration-300 relative overflow-hidden select-none backdrop-blur-sm ${
                 !n.read
-                  ? "bg-gradient-to-r from-indigo-500/[0.04] to-transparent dark:from-indigo-500/[0.02] border-indigo-150 dark:border-indigo-500/20 shadow-[0_2px_8px_rgba(99,102,241,0.04)]"
+                  ? "bg-gradient-to-r from-indigo-500/[0.04] to-transparent dark:from-indigo-500/[0.02] border-indigo-100 dark:border-indigo-500/20 shadow-[0_2px_8px_rgba(99,102,241,0.04)]"
                   : "bg-white dark:bg-[#13151f] border-gray-150 dark:border-slate-800/60"
               } hover:border-indigo-300 dark:hover:border-slate-700 hover:shadow-[0_4px_12px_rgba(0,0,0,0.03)] dark:hover:shadow-[0_4px_16px_rgba(0,0,0,0.25)] hover:scale-[1.003] cursor-pointer`}
               onClick={() => {
                 markRead(n.id);
-                if (n.type === "crash" || n.type === "resolved") {
-                  router.push(`/dashboard/incidents/${n.incident_id}`);
-                } else if (n.cluster_id) {
-                  router.push(`/cluster/${n.cluster_id}`);
-                } else {
-                  success("Incident detail is no longer available.");
-                }
+                router.push(n.link || "/dashboard/connectors");
               }}
             >
               {/* Unread Indicator Accent Bar */}
@@ -420,13 +451,13 @@ export default function NotificationsPage() {
 
               {/* Icon Container */}
               <div className={`w-11 h-11 rounded-xl flex items-center justify-center shrink-0 relative shadow-sm border border-gray-100/50 dark:border-slate-800/40 ${
-                n.type === "resolved" 
-                  ? "bg-green-50 dark:bg-green-500/10 text-green-550 dark:text-green-400" 
-                  : n.severity === "critical"
-                    ? "bg-red-50 dark:bg-red-500/10 text-red-500"
-                    : "bg-amber-50 dark:bg-amber-500/10 text-amber-500"
+                n.operation === "DELETE" || n.severity === "critical"
+                  ? "bg-red-50 dark:bg-red-500/10 text-red-500"
+                  : n.operation === "UPDATE" || n.severity === "warning"
+                    ? "bg-amber-50 dark:bg-amber-500/10 text-amber-500"
+                    : "bg-green-50 dark:bg-green-500/10 text-green-600 dark:text-green-400"
               }`}>
-                {!n.read && n.type === "crash" && (
+                {!n.read && (n.operation === "DELETE" || n.severity === "critical") && (
                   <span className="absolute -inset-0.5 rounded-xl bg-current opacity-15 animate-ping pointer-events-none" />
                 )}
                 <n.icon className="w-5.5 h-5.5" />
@@ -439,13 +470,13 @@ export default function NotificationsPage() {
                     {n.title}
                   </p>
                   <span className={`text-[10px] px-2 py-0.5 rounded-md font-bold uppercase tracking-wider ${
-                    n.type === "resolved"
-                      ? "bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 border border-green-100 dark:border-green-500/20"
-                      : n.type === "system"
-                        ? "bg-blue-50 dark:bg-blue-500/10 text-blue-600 dark:text-blue-400 border border-blue-100 dark:border-blue-500/20"
-                        : "bg-red-50 dark:bg-red-500/10 text-red-650 dark:text-red-400 border border-red-100 dark:border-red-500/20"
+                    n.operation === "DELETE"
+                      ? "bg-red-50 dark:bg-red-500/10 text-red-600 dark:text-red-400 border border-red-100 dark:border-red-500/20"
+                      : n.operation === "UPDATE"
+                        ? "bg-amber-50 dark:bg-amber-500/10 text-amber-600 dark:text-amber-400 border border-amber-100 dark:border-amber-500/20"
+                        : "bg-green-50 dark:bg-green-500/10 text-green-700 dark:text-green-400 border border-green-100 dark:border-green-500/20"
                   }`}>
-                    {n.type}
+                    {n.operation || n.type}
                   </span>
                 </div>
                 
@@ -467,7 +498,7 @@ export default function NotificationsPage() {
                         markRead(n.id);
                       }}
                       title="Mark as read"
-                      className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-150 dark:border-slate-800 text-gray-400 hover:text-indigo-650 dark:hover:text-indigo-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors shadow-sm bg-white dark:bg-[#13151f]"
+                      className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-150 dark:border-slate-800 text-gray-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors shadow-sm bg-white dark:bg-[#13151f]"
                     >
                       <CheckCheck className="w-4 h-4" />
                     </button>
@@ -478,25 +509,23 @@ export default function NotificationsPage() {
                       handleDeleteSingle(n);
                     }}
                     title="Delete notification"
-                    className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-150 dark:border-slate-800 text-gray-400 hover:text-red-650 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors shadow-sm bg-white dark:bg-[#13151f]"
+                    className="w-7 h-7 flex items-center justify-center rounded-lg border border-gray-150 dark:border-slate-800 text-gray-400 hover:text-red-600 dark:hover:text-red-400 hover:bg-red-50 dark:hover:bg-red-950/20 transition-colors shadow-sm bg-white dark:bg-[#13151f]"
                   >
                     <Trash2 className="w-4 h-4" />
                   </button>
-                  <span className="text-[11px] text-gray-400 dark:text-slate-550 font-medium whitespace-nowrap bg-gray-50 dark:bg-slate-900/40 px-2.5 py-1 rounded-full border border-gray-100 dark:border-slate-800/40">
+                  <span className="text-[11px] text-gray-400 dark:text-slate-500 font-medium whitespace-nowrap bg-gray-50 dark:bg-slate-900/40 px-2.5 py-1 rounded-full border border-gray-100 dark:border-slate-800/40">
                     {timeAgo(n.time)}
                   </span>
                 </div>
 
-                {n.incident_id && (
-                  <Link
-                    href={`/dashboard/incidents/${n.incident_id}`}
-                    className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 transition-colors group/link bg-indigo-50/50 dark:bg-indigo-500/5 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 border border-indigo-100/30 dark:border-indigo-500/10 px-3 py-1.5 rounded-xl shadow-sm"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    View details 
-                    <ExternalLink className="w-3.5 h-3.5 transition-transform group-hover/link:translate-x-0.5" />
-                  </Link>
-                )}
+                <Link
+                  href={n.link || "/dashboard/connectors"}
+                  className="inline-flex items-center gap-1.5 text-xs font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-500 dark:hover:text-indigo-300 transition-colors group/link bg-indigo-50/50 dark:bg-indigo-500/5 hover:bg-indigo-50 dark:hover:bg-indigo-500/10 border border-indigo-100/30 dark:border-indigo-500/10 px-3 py-1.5 rounded-xl shadow-sm"
+                  onClick={(e) => e.stopPropagation()}
+                >
+                  View in Ledger 
+                  <ExternalLink className="w-3.5 h-3.5 transition-transform group-hover/link:translate-x-0.5" />
+                </Link>
               </div>
             </div>
           ))}

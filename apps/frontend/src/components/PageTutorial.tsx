@@ -1,4 +1,5 @@
 "use client";
+
 import React, { useState, useEffect, useRef, useCallback } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import { api } from "@/lib/api";
@@ -13,374 +14,287 @@ interface TourStep {
 export const TOURS: Record<string, TourStep[]> = {
   "/dashboard": [
     {
-      title: "Welcome to Srevox! 👋",
-      description: "Srevox monitors, alerts, and diagnoses container restarts and OOM failures across your clusters in real-time. This guide will walk you through the key elements of the control dashboard.",
+      title: "Welcome to Srevox DB Auditor! 👋",
+      description: "Srevox DB Auditor is an enterprise-grade database change intelligence and CDC audit platform. It monitors database mutations in real-time, inspects before/after row diffs, masks PII, and maintains an immutable compliance ledger.",
     },
     {
-      selector: "#clusters-grid",
-      title: "Infrastructure Clusters 🖥️",
-      description: "Monitor the overall status of all connected environments. You can view total node configurations, pod capacity limits, and total active pod crashes immediately. Click a cluster card to drill down.",
+      selector: "#connectors-bar",
+      title: "Monitored Database Connectors 🗄️",
+      description: "Connect PostgreSQL WAL, MySQL Binlog, MongoDB Oplog, and Redis Keyspace sources with zero query overhead using log-based CDC replication.",
     },
     {
-      selector: "#recent-incidents",
-      title: "Recent Incident Alerts 🚨",
-      description: "View active CrashLoopBackOff and container exit logs sorted by latest event time. Click on any row to open the sidebar, inspect raw terminal stdout logs, and request AI diagnoses.",
+      selector: "#audit-stats-grid",
+      title: "Mutation Velocity & Security KPIs 📊",
+      description: "Track total active database connectors, captured mutation events, in-memory PII masking policies, and SHA-256 cryptographic compliance verification at a glance.",
+    },
+    {
+      selector: "#audit-events-list",
+      title: "Live CDC Mutation Stream ⚡",
+      description: "Inspect real-time INSERT, UPDATE, and DELETE row mutations. Click on any mutation record to open the interactive side-by-side Before/After diff viewer.",
     },
   ],
-  "/dashboard/clusters": [
+  "/dashboard/connectors": [
     {
-      title: "Kubernetes Cluster Manager ⚙️",
-      description: "View connected Kubernetes clusters. Srevox agents connect securely in read-only mode to poll pod statuses without write permissions.",
+      title: "CDC Live Stream & Compliance Ledger ⚡",
+      description: "Continuous real-time stream of all row-level mutations across your databases with automated field-level diff detection and PII hashing.",
     },
     {
-      selector: "#add-cluster-btn",
-      title: "Connect a New Cluster ➕",
-      description: "Click here to add a new cluster. Srevox generates a secure, custom kubectl command configuration containing a read-only manifest which you can apply directly inside your terminal.",
+      selector: "#add-connector-btn",
+      title: "Connect Database Source ➕",
+      description: "Click here to add a new database connector. Choose from PostgreSQL, MySQL, MongoDB, Redis, ClickHouse, TiDB, or OceanBase.",
     },
     {
-      selector: "#clusters-list",
-      title: "Active Connections List 📋",
-      description: "Review heartbeat health logs (updated every 10 seconds), API server latency, cluster version, and metrics streaming health. Click 'Edit Settings' to customize local warn alerts.",
+      selector: "#audit-filter-bar",
+      title: "Search & Mutation Filters 🔍",
+      description: "Filter captured CDC events by database name, specific tables, or mutation operation type (INSERT, UPDATE, DELETE).",
+    },
+    {
+      selector: "#audit-events-list",
+      title: "Row-Level Diff Inspector 📝",
+      description: "Select any audit event to inspect the exact column modifications, masked PII credentials, commit timestamps, and cryptographic record hashes.",
+    },
+  ],
+  "/dashboard/notifications": [
+    {
+      title: "Database Mutation Alerts & Notifications 🔔",
+      description: "A chronological feed of real-time row-level mutations, schema modifications, and audit triggers across your monitored databases.",
+    },
+    {
+      selector: "#notifications-filter-bar",
+      title: "Filter Mutation Events 🔍",
+      description: "Quickly toggle your feed between all events, unread mutation alerts, critical DELETE operations, or live UPDATE/INSERT streams.",
+    },
+    {
+      selector: "#notifications-list-feed",
+      title: "Real-time Mutation Events Log 📋",
+      description: "Browse detailed change records. Mark alerts as read, silence non-critical notifications, or click 'Ledger' to jump directly to the before/after diff.",
+    },
+  ],
+  "/settings/retention": [
+    {
+      title: "Data Retention & Compliance Ledger ⏱️",
+      description: "Configure automated ledger retention schedules and purge intervals for database change events and system audit logs.",
+    },
+    {
+      selector: "#retention-policy-card",
+      title: "Audit Events Retention Window 📅",
+      description: "Set the maximum age threshold for CDC mutation records (e.g. 30 days, 90 days, 1 year, or keep indefinitely). Older records are automatically queued for deletion.",
+    },
+    {
+      selector: "#retention-interval-card",
+      title: "Purge Execution Frequency ⚙️",
+      description: "Configure the background automated cron sweep interval (e.g. hourly, every 6 hours, daily) to clean up stale audit ledgers.",
+    },
+    {
+      selector: "#retention-runs-list",
+      title: "Purge Execution History 📋",
+      description: "Review historical automated and manual purge sweep executions, timestamps, and total deleted items.",
     },
   ],
   "/settings/channels": [
     {
       title: "Alert Routing Channels 🔔",
-      description: "Configure workspace-wide communication channels. Srevox forwards detailed incident maps containing crash logs directly to your team communication hubs.",
+      description: "Configure workspace-wide communication channels to receive real-time notifications on critical schema alterations and mutation anomalies.",
     },
     {
       selector: "#add-channel-btn",
-      title: "Add a Notification Channel ➕",
-      description: "Click here to add a channel. Supports SMTP Email (with secure SSL/TLS ports), Microsoft Teams Webhooks, Slack Webhooks, or Twilio/Meta WhatsApp configuration variables.",
+      title: "Add Notification Channel ➕",
+      description: "Click here to add a channel. Supports direct SMTP Email, Microsoft Teams Workflows (Power Automate), Slack Webhooks, or Twilio/Meta WhatsApp.",
     },
     {
       selector: "#channels-list",
-      title: "Manage Deliveries & Integration Tests 🧪",
-      description: "Manage channel subscriptions. Click the 'Test' button to instantly dispatch a simulated payload event to verify your webhook URLs and credentials before going live.",
-    },
-  ],
-  "/dashboard/rules": [
-    {
-      title: "Alert Rules & Conditions 📜",
-      description: "Custom rules block alert fatigue. Control precisely when alerts dispatch, filtering events based on clusters, namespaces, or pod naming patterns.",
-    },
-    {
-      selector: "#add-rule-btn",
-      title: "Create a Custom Alert Rule ➕",
-      description: "Define rules. Enforce a 'Minimum Restart Count' (e.g. only alert if a pod restarts 3+ times within 5 minutes) and a cooldown duration (e.g., 10 minutes) to suppress duplicate noise.",
-    },
-    {
-      selector: "#rules-list",
-      title: "Configured Rules Feed 📋",
-      description: "Review and edit rules. You can link each rule to multiple communication channels, or toggle rules to 'Paused' to prevent alerts during scheduled cluster maintenance.",
-    },
-  ],
-  "/dashboard/incidents": [
-    {
-      title: "Incidents Feed & Crash History 📂",
-      description: "Deep-dive into container crashes, restart history, and exit codes. Real-time updates populate the list automatically as failures occur on your clusters.",
-    },
-    {
-      selector: "#incidents-filter",
-      title: "Search & Filtering Controls 🔍",
-      description: "Filter your incident log stream by status (open, acknowledged, resolved), crash severity levels, specific cluster environments, namespace filters, or pod search queries.",
-    },
-    {
-      selector: "#incidents-list",
-      title: "Detailed Incident Feed 📝",
-      description: "Select an incident to view container exit codes, memory utilization percentages, pod log files, and request AI diagnoses to troubleshoot memory leaks or database timeouts.",
-    },
-  ],
-  "/settings/profile": [
-    {
-      title: "Settings Workspace ⚙️",
-      description: "Manage your personal account credentials, alert preferences, team members directory, and AI keys all within one unified settings area.",
-    },
-    {
-      selector: "#settings-profile",
-      title: "Personal Profile Settings 👤",
-      description: "Update your full name, manage your email credentials (admin only), or modify security passwords. Save or Cancel modifications using toggle controls.",
-    },
-    {
-      selector: "#settings-password",
-      title: "Security & Passwords 🔑",
-      description: "Keep your account secure by rotating your password regularly. Requires your current password to authorize updates.",
-    },
-    {
-      selector: "#settings-session",
-      title: "Session Management 🚪",
-      description: "Safely sign out of your current Srevox session. Active configurations and preferences will remain saved under your profile.",
-    },
-  ],
-  "/dashboard/notifications": [
-    {
-      title: "Incident Notifications Feed 🔔",
-      description: "A chronological feed of recent pod restarts, failures, and container exit events triggered across your monitored cluster namespaces.",
-    },
-    {
-      selector: "#notifications-filter-bar",
-      title: "Filter Events 🔍",
-      description: "Quickly toggle your logs view between all events, unread alerts, active crash events, or resolved incidents.",
-    },
-    {
-      selector: "#notifications-list-feed",
-      title: "Events Log 📋",
-      description: "Browse detailed event records. Click on any event to mark it read, or select 'View details' to drill down into raw pod logs and diagnostic charts.",
-    },
-  ],
-  "/cluster/infrastructure": [
-    {
-      title: "Infrastructure Live Telemetry 🖥️",
-      description: "Monitor cluster-wide resource allocation. Tracks aggregate nodes and pods CPU/Memory telemetry metrics streaming in real-time.",
-    },
-    {
-      selector: "#infra-metric-cards",
-      title: "Cluster Metric Averages 📈",
-      description: "Review average CPU, memory usage, total allocated pods, and identify hot master/worker nodes experiencing utilization spikes over 90% in real-time.",
-    },
-    {
-      selector: "#infra-pods-list",
-      title: "Real-time Pod Resource Usage ⚙️",
-      description: "Monitor resources per pod. Filter by namespace to instantly discover heavy services or pods causing node memory starvation.",
-    },
-    {
-      selector: "#infra-pods-search",
-      title: "Search & Filter Pods 🔍",
-      description: "Quickly locate specific pods or filter by namespace to drill down on targeted services and identify resource exhaustion.",
-    },
-  ],
-  "/dashboard/services": [
-    {
-      title: "Service Alert Routing 👥",
-      description: "Assign specific engineers to take ownership of individual Kubernetes namespaces or pod name prefix patterns.",
-    },
-    {
-      selector: "#add-service-owner-btn",
-      title: "Assign a Service Owner ➕",
-      description: "Assign a service owner. Srevox will automatically route corresponding incident warnings directly to their personal channels.",
-    },
-    {
-      selector: "#service-owners-list",
-      title: "Active Assignments 📋",
-      description: "Review current namespace ownership assignments. When alerts occur, they route to the owner's channels in addition to the global channel list.",
+      title: "Channel Subscriptions & Integration Tests 🧪",
+      description: "Manage channel configurations and click 'Test' to instantly dispatch a simulated test alert to verify credentials and connectivity.",
     },
   ],
   "/settings/team": [
     {
-      title: "Team & Access Control 👥",
-      description: "Invite team members to Srevox, manage email profiles (admin only), and assign user permissions.",
+      title: "Team Members & Access Control 👥",
+      description: "Invite team members to Srevox DB Auditor, manage administrator credentials, and assign roles.",
     },
     {
       selector: "#team-create-member-btn",
       title: "Invite a User ➕",
-      description: "Invite a colleague by generating temporary login credentials. Assign them Viewer, Member, or Admin permissions.",
+      description: "Create new member profiles with temporary credentials and assign them Admin, Member, or Viewer roles.",
     },
     {
       selector: "#team-roles-guide",
-      title: "Role Profiles 📜",
-      description: "Review permissions: Admins control all settings and purge cluster data, Members manage incidents/AI, Viewers have read-only access.",
+      title: "RBAC Role Profiles 📜",
+      description: "Review permissions: Admins control database connectors and retention policies, Members manage live streams/AI, and Viewers have read-only inspection.",
     },
     {
       selector: "#team-members-list",
       title: "Members Directory 📋",
-      description: "View name and emails (searchable alphabetically). Admin accounts can change roles, reset passwords, or revoke access keys.",
+      description: "Browse team members, modify roles, reset passwords, or revoke platform access.",
     },
-  ],
-  "/settings/preferences": [
-    {
-      title: "Personal Alert Preferences ⚙️",
-      description: "Customize which container warnings you personally want to receive. These filters apply to your assigned service alerts only.",
-    },
-    {
-      selector: "#prefs-toggle",
-      title: "Toggle Notifications 🔔",
-      description: "Use this switch to pause all personal notifications. Org-level alerts remain operational.",
-    },
-    {
-      selector: "#prefs-save",
-      title: "Save Updates 💾",
-      description: "Adjust severities filters, specific crash reasons, quiet hour intervals (UTC), and lifecycle resolutions. Click here to save.",
-    },
-  ],
-  "/settings/org": [
-    {
-      title: "Organization Settings 🏢",
-      description: "Manage global workspace preferences. Only users with the Admin role can access or modify these settings.",
-    },
-    {
-      selector: "#org-details-card",
-      title: "Organization Profile 📋",
-      description: "View and edit organization name. Non-admin users are restricted from changing this value.",
-    },
-    {
-      selector: "#danger-zone-card",
-      title: "Danger Zone Controls ⚠️",
-      description: "Perform sensitive administrative operations such as purging cluster configs, deleting incidents, or resetting databases here.",
-    },
-  ],
-  "/dashboard/analytics": [
-    {
-      title: "System Analytics & Trends 📊",
-      description: "Analyze cluster health, incident frequencies, and noise reduction rates. Spot recurring crash patterns and service anomalies.",
-    },
-    {
-      selector: "#analytics-summary",
-      title: "Key Metrics Summary 📈",
-      description: "Track total incidents, mean time to resolve (MTTR), noise reduction ratios, and active alerting alerts status at a glance.",
-    },
-    {
-      selector: "#analytics-charts-container",
-      title: "Crashes vs. Alerts Trend 📉",
-      description: "Visualize crash trends and alert dispatches side-by-side. Check your historical metrics to optimize alert rules.",
-    }
-  ],
-  "/dashboard/services/features": [
-    {
-      title: "Service Owner Feature Settings ⚙️",
-      description: "Customize global routing rules, fallback contact channels, and muting windows for service owner alerts.",
-    },
-    {
-      selector: "#fallback-route-options",
-      title: "Fallback Route Options 👥",
-      description: "Configure fallback routing contact channels. These settings act as safety networks if an incident occurs on a service without assigned channels.",
-    },
-    {
-      selector: "#global-service-muting",
-      title: "Global Service Alert Muting 🔕",
-      description: "Temporarily silence or disable all incoming service owner alerts. Enforce global maintenance windows here.",
-    },
-    {
-      selector: "#service-route-mappings",
-      title: "Service Mappings & Toggles 🗂️",
-      description: "Browse the registered service owner endpoints, verify mapped Kubernetes namespaces, and toggle alerts silencing per microservice.",
-    }
   ],
   "/settings/groups": [
     {
       title: "User Groups Manager 👥",
-      description: "Group multiple teammates together to simplify permissions administration. Teammates added to a group inherit all group-level overrides automatically.",
+      description: "Group teammates together to simplify database access administration. Group members automatically inherit shared policies.",
     },
     {
       selector: "#groups-search",
       title: "Search Groups 🔍",
-      description: "Locate specific user groups instantly by typing keywords from names or descriptions.",
+      description: "Quickly locate specific user groups by name or description keywords.",
     },
     {
       selector: "#create-group-btn",
       title: "Create a User Group ➕",
-      description: "Click here to spawn a new group, specify its name and description, select member accounts, and assign base policy settings.",
+      description: "Click here to create a new group, specify its name, description, assign members, and set permissions.",
     },
     {
       selector: "#groups-list",
       title: "Configured Groups List 📋",
-      description: "Review, edit member configurations, update group-level permission locks, or delete group configurations from the active list.",
-    }
+      description: "Review group configurations, edit assigned members, update policy settings, or delete groups.",
+    },
   ],
   "/settings/permissions": [
     {
-      title: "User Permissions Overrides 🛡️",
-      description: "Customize granular permissions for individual team members. By default, access is governed by roles, but you can override capabilities here.",
+      title: "User Permissions & Capability Matrix 🛡️",
+      description: "Fine-tune granular permissions for individual team members to override default role capabilities.",
     },
     {
       selector: "#permissions-search",
-      title: "Search Member list 🔍",
-      description: "Find specific members by name or email using the real-time search filter.",
+      title: "Search Member Capabilities 🔍",
+      description: "Find specific team members by name or email using the real-time search filter.",
     },
     {
       selector: "#permissions-table",
-      title: "Permissions Directory 📋",
-      description: "View permission modes. Click 'Edit Custom' on any user to open the override manager drawer and modify specific capabilities.",
-    }
+      title: "Permissions Matrix 📋",
+      description: "View permission modes. Click 'Edit Custom' on any user to modify specific capabilities like managing connectors, changing retention, or viewing audit logs.",
+    },
   ],
-  "/settings/more-settings": [
+  "/settings/org": [
     {
-      title: "Advanced Administrative Settings ⚙️",
-      description: "Configure data retention schedules, platform updates check intervals, and advanced administrative parameters.",
+      title: "Organization & Multi-Tenancy 🏢",
+      description: "Manage global workspace identity and database security parameters. Only Admin users can modify these settings.",
     },
     {
-      selector: "#sudo-security-lock",
-      title: "Sudo Security Passcode 🔑",
-      description: "Update the global security password used to restrict access to sensitive administrative views such as Cluster Settings and Audit Logs.",
+      selector: "#org-details-card",
+      title: "Organization Profile 📋",
+      description: "View and edit your organization workspace name and unique multi-tenant slug identifier.",
     },
     {
-      selector: "#audit-logs-retention",
-      title: "Audit Logs Retention 📂",
-      description: "Manage database purge intervals for audit log ledgers and historical analytics datasets (located under the Audit Logs Retention tab).",
-    }
-  ]
+      selector: "#danger-zone-card",
+      title: "Administrative Security & Danger Zone ⚠️",
+      description: "Perform sensitive administrative operations including global workspace security and credential rotation.",
+    },
+  ],
+  "/settings/activity": [
+    {
+      title: "Platform Audit Logs 📜",
+      description: "A centralized audit ledger of all administrative actions, user logins, connector updates, and policy adjustments across your workspace.",
+    },
+    {
+      selector: "#activity-search",
+      title: "Search Activity Logs 🔍",
+      description: "Search system audit records by user email, action type, IP address, or affected resource.",
+    },
+    {
+      selector: "#activity-list",
+      title: "Action History Stream 📋",
+      description: "Inspect chronological action logs with detailed JSON metadata and user identity tracking.",
+    },
+  ],
+  "/settings/appearance": [
+    {
+      title: "Theme & Appearance 🎨",
+      description: "Customize your workspace interface with light and dark themes.",
+    },
+    {
+      selector: "#appearance-theme-options",
+      title: "Visual Theme Settings 🌓",
+      description: "Switch seamlessly between sleek dark mode, daylight mode, or custom accent themes.",
+    },
+  ],
+  "/settings/profile": [
+    {
+      title: "Profile & Security 👤",
+      description: "Manage your personal account credentials, email, and password security.",
+    },
+    {
+      selector: "#settings-profile",
+      title: "Account Profile 👤",
+      description: "Update your full name, email address, and view your current workspace role.",
+    },
+    {
+      selector: "#settings-password",
+      title: "Password & Security 🔑",
+      description: "Keep your account secure with regular password updates.",
+    },
+    {
+      selector: "#settings-session",
+      title: "Session Management 🚪",
+      description: "Sign out securely from your current active session on this device.",
+    },
+  ],
+  "/settings/updates": [
+    {
+      title: "Platform Updates & Deployment 🚀",
+      description: "Check your active Srevox DB Auditor version, discover new production releases, and run single-command deployment upgrades.",
+    },
+  ],
+  "/settings/demo": [
+    {
+      title: "Demo Sandbox & Guided Walkthrough 🧭",
+      description: "Experience the full capabilities of Srevox DB Auditor in an interactive simulator environment.",
+    },
+  ],
 };
 
 const DEFAULT_TOUR: TourStep[] = [
   {
-    title: "Srevox Tour Guide 🧭",
-    description: "Welcome! Srevox is a Kubernetes observability platform that alerts on and diagnoses pod crash loops. Here is a brief 3-step guide to get started.",
+    title: "Srevox DB Auditor Tour Guide 🧭",
+    description: "Welcome! Srevox DB Auditor captures database row mutations in real-time, highlights before/after diffs, masks PII, and streams audit alerts. Here is a brief 3-step guide to get started.",
   },
   {
-    title: "1. Connect a Cluster 🖥️",
-    description: "Navigate to the Clusters page to connect your Kubernetes environments. You can run the read-only agent or paste a read-only kubeconfig.",
+    title: "1. Connect Database Sources 🗄️",
+    description: "Navigate to the Dashboard to connect your PostgreSQL WAL, MySQL Binlog, MongoDB Oplog, or Redis Keyspace CDC sources.",
   },
   {
-    title: "2. Configure Alert Channels 🔔",
-    description: "Set up Slack, Teams, Email, or WhatsApp channels in the Channels page. This ensures your team receives incident cards in real-time.",
+    title: "2. Inspect CDC Live Stream & Diffs ⚡",
+    description: "View real-time row mutations with side-by-side before/after column diffs, PII masked attributes, and cryptographic SHA-256 validation.",
   },
   {
-    title: "3. Set Up Alert Rules 📜",
-    description: "Use the Alert Rules page to filter out noise, specify crash reason criteria (e.g. OOMKilled), and route alert events to specific channels.",
+    title: "3. Configure Alert Channels & Retention 🔔",
+    description: "Set up Email, Teams, WhatsApp, or Webhook alert channels and configure automated data retention purge policies in Settings.",
   },
 ];
 
 const TOUR_SEQUENCE = [
   "/dashboard",
-  "/dashboard/clusters",
-  "/settings/channels",
-  "/dashboard/rules",
-  "/dashboard/incidents",
-  "/dashboard/services",
-  "/dashboard/services/features",
-  "/cluster/infrastructure",
-  "/dashboard/analytics",
+  "/dashboard/connectors",
   "/dashboard/notifications",
-  "/settings/profile",
-  "/settings/more-settings"
-];
-
-const SETTINGS_TOUR_SEQUENCE = [
-  "/settings/profile",
-  "/settings/preferences",
+  "/settings/retention",
   "/settings/channels",
   "/settings/team",
   "/settings/groups",
   "/settings/permissions",
   "/settings/org",
-  "/settings/more-settings"
+  "/settings/activity",
+  "/settings/updates",
+  "/settings/profile",
+  "/settings/demo",
+];
+
+const SETTINGS_TOUR_SEQUENCE = [
+  "/settings/profile",
+  "/settings/appearance",
+  "/settings/retention",
+  "/settings/channels",
+  "/settings/team",
+  "/settings/permissions",
+  "/settings/groups",
+  "/settings/org",
+  "/settings/activity",
+  "/settings/updates",
+  "/settings/demo",
 ];
 
 const matchPathIndex = (sequence: string[], path: string | null): number => {
   if (!path) return -1;
-  return sequence.findIndex(item => {
-    if (item === path) return true;
-    if (item === "/cluster/infrastructure" && path.startsWith("/cluster/") && path.endsWith("/infrastructure")) return true;
-    return false;
-  });
-};
-
-const getTourClusterId = async (): Promise<string> => {
-  try {
-    const mockStr = localStorage.getItem("sv_mock_clusters");
-    if (mockStr) {
-      const mockCls = JSON.parse(mockStr);
-      if (mockCls && mockCls[0]?.cluster_id) {
-        return mockCls[0].cluster_id;
-      }
-    }
-    const r = await api.get("/api/clusters");
-    if (r.data?.clusters?.[0]?.cluster_id) {
-      return r.data.clusters[0].cluster_id;
-    }
-  } catch (e) {
-    console.error(e);
-  }
-  return "gcp-cluster-prod";
+  return sequence.findIndex((item) => item === path);
 };
 
 export default function PageTutorial() {
@@ -410,7 +324,6 @@ export default function PageTutorial() {
     return 1;
   });
 
-  // Sync playback speed to localStorage
   useEffect(() => {
     if (typeof window !== "undefined") {
       localStorage.setItem("sv_tour_speed", String(playbackSpeed));
@@ -419,20 +332,16 @@ export default function PageTutorial() {
 
   const [isAutopilotExecuting, setIsAutopilotExecuting] = useState(false);
 
-  // Hide the quick tour entirely on the engineering page and incident detail pages
-  const shouldHide = 
+  const shouldHide =
     pathname === "/settings/engineering" ||
-    pathname?.startsWith("/settings/engineering") ||
-    (pathname?.startsWith("/dashboard/incidents/") && pathname !== "/dashboard/incidents");
+    pathname?.startsWith("/settings/engineering");
 
-  // Retrieve matching steps for current path or general fallback
   const getSteps = useCallback((): TourStep[] => {
-    // Exact match or prefix match
     const keys = Object.keys(TOURS);
-    const match = keys.find(k => 
-      pathname === k || 
-      (k !== "/dashboard" && pathname?.startsWith(k)) ||
-      (k === "/cluster/infrastructure" && pathname?.startsWith("/cluster/") && pathname?.endsWith("/infrastructure"))
+    const match = keys.find(
+      (k) =>
+        pathname === k ||
+        (k !== "/dashboard" && pathname?.startsWith(k))
     );
     return match ? TOURS[match] : DEFAULT_TOUR;
   }, [pathname]);
@@ -446,7 +355,6 @@ export default function PageTutorial() {
     }
   }, [active, currentStep]);
 
-  // Compute bounding box coordinates of targeted element
   const updateTargetCoordinates = useCallback(() => {
     if (!active || !currentStep?.selector) {
       setTargetRect(null);
@@ -455,7 +363,6 @@ export default function PageTutorial() {
     const element = document.querySelector(currentStep.selector);
     if (element) {
       const rect = element.getBoundingClientRect();
-      // Ensure elements with 0 width/height default to null (not visible yet)
       if (rect.width > 0 && rect.height > 0) {
         setTargetRect(rect);
         return;
@@ -464,10 +371,9 @@ export default function PageTutorial() {
     setTargetRect(null);
   }, [active, currentStep]);
 
-  // Scroll to target element when step or page changes
   useEffect(() => {
     if (!active || !currentStep?.selector) return;
-    
+
     const timer = setTimeout(() => {
       const element = document.querySelector(currentStep.selector!);
       if (element) {
@@ -481,7 +387,6 @@ export default function PageTutorial() {
     return () => clearTimeout(timer);
   }, [stepIndex, pathname, active, currentStep?.selector]);
 
-  // Track scroll and resize shifts dynamically
   useEffect(() => {
     if (!active) return;
     updateTargetCoordinates();
@@ -493,7 +398,6 @@ export default function PageTutorial() {
     window.addEventListener("scroll", handleResizeOrScroll, { capture: true, passive: true });
     window.addEventListener("resize", handleResizeOrScroll, { passive: true });
 
-    // Periodic coordinate sync loop to catch async loads or layout adjustments
     const interval = setInterval(updateTargetCoordinates, 250);
 
     return () => {
@@ -503,16 +407,38 @@ export default function PageTutorial() {
     };
   }, [active, updateTargetCoordinates]);
 
-  // Handle tour activation
-  const startTour = useCallback(() => {
-    setStepIndex(0);
-    setActive(true);
-  }, []);
+  const startTour = useCallback((isSmartAutoPilot = false, isSettings = false) => {
+    try {
+      localStorage.setItem("sv_tour_completed", "false");
+      if (isSettings) {
+        localStorage.setItem("sv_settings_tour_active", "true");
+      } else {
+        localStorage.removeItem("sv_settings_tour_active");
+      }
 
-  // Next step
+      if (isSmartAutoPilot) {
+        localStorage.setItem("sv_autopilot_tour_active", "true");
+        localStorage.setItem("sv_tour_speed", "1.25");
+        setPlaybackSpeed(1.25);
+      } else {
+        localStorage.removeItem("sv_autopilot_tour_active");
+      }
+
+      localStorage.setItem("sv_auto_tour_active", "true");
+      localStorage.setItem("sv_auto_tour_page_index", "0");
+
+      setActive(true);
+      setStepIndex(0);
+      setTimeLeft(stepDuration);
+      setAutoPlay(isSmartAutoPilot);
+    } catch (e) {
+      console.error(e);
+    }
+  }, [stepDuration]);
+
   const handleNext = () => {
     if (stepIndex < steps.length - 1) {
-      setStepIndex(prev => prev + 1);
+      setStepIndex((prev) => prev + 1);
     } else {
       const sequence = getTourSequence();
       const idx = matchPathIndex(sequence, pathname);
@@ -522,38 +448,31 @@ export default function PageTutorial() {
           localStorage.setItem("sv_auto_tour_active", "true");
           localStorage.setItem("sv_auto_tour_page_index", String(idx + 1));
         }
-        if (nextPage === "/cluster/infrastructure") {
-          getTourClusterId().then(clusterId => {
-            router.push(`/cluster/${clusterId}/infrastructure`);
-          });
-        } else {
-          router.push(nextPage);
-        }
+        router.push(nextPage);
         return;
       }
       endTour();
     }
   };
 
-  // Previous step
   const handlePrev = () => {
     if (stepIndex > 0) {
-      setStepIndex(prev => prev - 1);
+      setStepIndex((prev) => prev - 1);
     }
   };
 
-  // Complete tour
   const endTour = () => {
     setActive(false);
     setAutoPlay(false);
-    // Mark as completed in local storage
     try {
       localStorage.setItem("sv_tour_completed", "true");
-      
+
       const saved = localStorage.getItem("sv_completed_tours");
       let completed: Record<string, boolean> = {};
       if (saved) {
-        try { completed = JSON.parse(saved); } catch {}
+        try {
+          completed = JSON.parse(saved);
+        } catch {}
       }
       completed[pathname || ""] = true;
       localStorage.setItem("sv_completed_tours", JSON.stringify(completed));
@@ -564,18 +483,14 @@ export default function PageTutorial() {
       localStorage.removeItem("sv_auto_tour_page_index");
       localStorage.removeItem("sv_autopilot_tour_active");
       localStorage.removeItem("sv_settings_tour_active");
-      
-      // Clean up mock data and backend offline keys so refresh or future calls fetch real backend
-      localStorage.removeItem("sv_mock_clusters");
-      localStorage.removeItem("sv_mock_incidents");
+
+      localStorage.removeItem("sv_mock_connectors");
+      localStorage.removeItem("sv_mock_audit_events");
       localStorage.removeItem("sv_mock_channels");
-      localStorage.removeItem("sv_mock_rules");
-      localStorage.removeItem("sv_mock_resource_alerts");
-      localStorage.removeItem("sv_mock_service_owners");
-      localStorage.removeItem("sv_mock_preferences");
+      localStorage.removeItem("sv_mock_retention_db_audit");
       localStorage.removeItem("sv_mock_initialized");
       localStorage.removeItem("sv_backend_offline");
-      
+
       if (localStorage.getItem("sv_token") === "mock-token-session") {
         localStorage.removeItem("sv_token");
         localStorage.removeItem("lz_user");
@@ -592,7 +507,6 @@ export default function PageTutorial() {
     }
   };
 
-  // Keyboard controls for the tour
   useEffect(() => {
     if (!active) return;
 
@@ -613,56 +527,33 @@ export default function PageTutorial() {
       }
     };
 
-    const handleKeyUp = (e: KeyboardEvent) => {
-      if (e.key === "Escape" || e.code === "Escape" || e.key === " " || e.code === "Space") {
-        e.preventDefault();
-        e.stopPropagation();
-        e.stopImmediatePropagation();
-      }
-    };
-
     window.addEventListener("keydown", handleKeyDown, true);
-    window.addEventListener("keyup", handleKeyUp, true);
     return () => {
       window.removeEventListener("keydown", handleKeyDown, true);
-      window.removeEventListener("keyup", handleKeyUp, true);
     };
   }, [active]);
 
-  // Listen to start tour events
   useEffect(() => {
     const handleStartTour = () => {
       startTour();
     };
     const handleStartAutoTour = () => {
-      if (typeof window !== "undefined") {
-        localStorage.setItem("sv_auto_tour_active", "true");
-        localStorage.setItem("sv_auto_tour_page_index", "0");
-        const isSmart = localStorage.getItem("sv_autopilot_tour_active") === "true";
-        setActive(true);
-        setAutoPlay(isSmart);
-        setStepIndex(0);
-        setTimeLeft(stepDuration);
-      }
+      startTour(true);
     };
+
     window.addEventListener("sv_start_tour", handleStartTour);
     window.addEventListener("sv_start_auto_tour", handleStartAutoTour);
+
     return () => {
       window.removeEventListener("sv_start_tour", handleStartTour);
       window.removeEventListener("sv_start_auto_tour", handleStartAutoTour);
     };
-  }, [stepDuration]);
+  }, [startTour]);
 
-  // Listen to pathname changes for auto-tour continuation
   useEffect(() => {
     if (typeof window !== "undefined") {
-      if (localStorage.getItem("sv_start_live_tour_on_load") === "true") {
-        localStorage.removeItem("sv_start_live_tour_on_load");
-        startTour();
-        return;
-      }
-      const isAuto = localStorage.getItem("sv_auto_tour_active") === "true";
-      if (isAuto) {
+      const isAutoActive = localStorage.getItem("sv_auto_tour_active") === "true";
+      if (isAutoActive) {
         const sequence = getTourSequence();
         const idx = matchPathIndex(sequence, pathname);
         if (idx !== -1) {
@@ -677,14 +568,12 @@ export default function PageTutorial() {
     }
   }, [pathname, stepDuration, getTourSequence, startTour]);
 
-  // Reset progress timer on step changes
   useEffect(() => {
     if (active) {
       setTimeLeft(stepDuration);
     }
   }, [stepIndex, pathname, active, stepDuration]);
 
-  // Auto-play timer loop
   useEffect(() => {
     if (!active || !autoPlay || isAutopilotExecuting) return;
 
@@ -702,179 +591,120 @@ export default function PageTutorial() {
 
   // Autopilot Actions effect
   useEffect(() => {
-    if (typeof window === "undefined") return;
-    const isAutopilotActive = localStorage.getItem("sv_autopilot_tour_active") === "true";
-    if (!isAutopilotActive || !active || !autoPlay) return;
+    if (typeof window !== "undefined") {
+      const isAutopilotActive = localStorage.getItem("sv_autopilot_tour_active") === "true";
+      if (!isAutopilotActive || !active || !autoPlay) return;
 
-    let activeEffect = true;
+      let activeEffect = true;
 
-    const delay = (ms: number) => {
-      return new Promise<void>((resolve) => {
-        setTimeout(() => {
-          resolve();
-        }, ms);
-      });
-    };
+      const delay = (ms: number) => {
+        return new Promise<void>((resolve) => {
+          setTimeout(() => {
+            resolve();
+          }, ms);
+        });
+      };
 
-    const waitForElement = (selector: string, timeout = 3000): Promise<HTMLElement | null> => {
-      return new Promise((resolve) => {
-        const startTime = Date.now();
-        const check = () => {
-          if (!activeEffect) {
-            resolve(null);
-            return;
-          }
-          const el = document.querySelector(selector) as HTMLElement;
-          if (el) {
-            resolve(el);
-          } else if (Date.now() - startTime >= timeout) {
-            resolve(null);
-          } else {
-            setTimeout(check, 100);
-          }
-        };
-        check();
-      });
-    };
+      const waitForElement = (selector: string, timeout = 3000): Promise<HTMLElement | null> => {
+        return new Promise((resolve) => {
+          const startTime = Date.now();
+          const check = () => {
+            if (!activeEffect) {
+              resolve(null);
+              return;
+            }
+            const el = document.querySelector(selector) as HTMLElement;
+            if (el) {
+              resolve(el);
+            } else if (Date.now() - startTime >= timeout) {
+              resolve(null);
+            } else {
+              setTimeout(check, 100);
+            }
+          };
+          check();
+        });
+      };
 
-    const waitForButtonWithText = (text: string, timeout = 3000): Promise<HTMLElement | null> => {
-      return new Promise((resolve) => {
-        const startTime = Date.now();
-        const check = () => {
-          if (!activeEffect) {
-            resolve(null);
-            return;
-          }
-          const btn = Array.from(document.querySelectorAll("button")).find(
-            (b) => b.textContent?.includes(text)
-          ) as HTMLElement;
-          if (btn) {
-            resolve(btn);
-          } else if (Date.now() - startTime >= timeout) {
-            resolve(null);
-          } else {
-            setTimeout(check, 100);
-          }
-        };
-        check();
-      });
-    };
+      const waitForButtonWithText = (text: string, timeout = 3000): Promise<HTMLElement | null> => {
+        return new Promise((resolve) => {
+          const startTime = Date.now();
+          const check = () => {
+            if (!activeEffect) {
+              resolve(null);
+              return;
+            }
+            const btn = Array.from(document.querySelectorAll("button")).find(
+              (b) => b.textContent?.includes(text)
+            ) as HTMLElement;
+            if (btn) {
+              resolve(btn);
+            } else if (Date.now() - startTime >= timeout) {
+              resolve(null);
+            } else {
+              setTimeout(check, 100);
+            }
+          };
+          check();
+        });
+      };
 
-    const simulateTyping = (input: HTMLElement, text: string) => {
-      if (!activeEffect) return;
-      const htmlInput = input as HTMLInputElement | HTMLTextAreaElement;
-      htmlInput.value = text;
-      const tracker = (htmlInput as any)._valueTracker;
-      if (tracker) tracker.setValue("");
-      htmlInput.dispatchEvent(new Event("input", { bubbles: true }));
-      htmlInput.dispatchEvent(new Event("change", { bubbles: true }));
-    };
+      const simulateTyping = (input: HTMLElement, text: string) => {
+        if (!activeEffect) return;
+        const htmlInput = input as HTMLInputElement | HTMLTextAreaElement;
+        htmlInput.value = text;
+        const tracker = (htmlInput as any)._valueTracker;
+        if (tracker) tracker.setValue("");
+        htmlInput.dispatchEvent(new Event("input", { bubbles: true }));
+        htmlInput.dispatchEvent(new Event("change", { bubbles: true }));
+      };
 
-    const runAutopilotAction = async () => {
-      setIsAutopilotExecuting(true);
-      try {
-        // 1. Clusters Page autopilot actions
-        if (pathname === "/dashboard/clusters") {
-          if (stepIndex === 1) {
-            const addBtn = await waitForElement("#add-cluster-btn");
-            if (addBtn) {
-              addBtn.click();
-              const nameInput = await waitForElement("input[placeholder='production-us-east']");
-              if (nameInput) {
-                simulateTyping(nameInput, "srevox-demo-gke");
-                await delay(800);
-                const submitBtn = await waitForButtonWithText("Add cluster");
-                if (submitBtn) {
-                  submitBtn.click();
-                  const doneBtn = await waitForButtonWithText("Done");
-                  if (doneBtn) {
-                    doneBtn.click();
-                  }
+      const runAutopilotAction = async () => {
+        setIsAutopilotExecuting(true);
+        try {
+          // 1. Data Audit Page autopilot actions
+          if (pathname === "/dashboard/connectors" || pathname === "/dashboard") {
+            if (stepIndex === 1) {
+              const addBtn = await waitForElement("#add-connector-btn");
+              if (addBtn) {
+                addBtn.click();
+                await delay(1200);
+                const closeBtn = await waitForButtonWithText("Cancel");
+                if (closeBtn) {
+                  closeBtn.click();
                 }
               }
             }
           }
-        }
-        
-        // 2. Channels Page autopilot actions
-        if (pathname === "/settings/channels") {
-          if (stepIndex === 1) {
-            const addBtn = await waitForElement("#add-channel-btn");
-            if (addBtn) {
-              addBtn.click();
-              const nameInput = await waitForElement("input[placeholder='e.g. Engineering On-Call Alerts']");
-              if (nameInput) {
-                simulateTyping(nameInput, "slack-incident-alerts");
-                await delay(800);
-                const webhookTab = await waitForButtonWithText("webhook");
-                if (webhookTab) {
-                  webhookTab.click();
-                  const urlInput = await waitForElement("input[placeholder='https://hooks.slack.com/services/...']");
-                  if (urlInput) {
-                    simulateTyping(urlInput, "https://hooks.slack.com/services/T00/B00/X00");
-                    await delay(800);
-                    const saveBtn = await waitForButtonWithText("Save Channel");
-                    if (saveBtn) {
-                      saveBtn.click();
-                    }
-                  }
-                }
-              }
-            }
-          }
-        }
-        
-        // 3. Rules Page autopilot actions
-        if (pathname === "/dashboard/rules") {
-          if (stepIndex === 1) {
-            const addBtn = await waitForElement("#add-rule-btn");
-            if (addBtn) {
-              addBtn.click();
-              const nameInput = await waitForElement("input[placeholder='Production critical']");
-              if (nameInput) {
-                simulateTyping(nameInput, "OOMKilled Critical Alert");
-                await delay(800);
-                const clusterSelect = await waitForElement("select") as HTMLSelectElement;
-                if (clusterSelect && clusterSelect.options.length > 0) {
-                  clusterSelect.value = "mock-prod-cluster";
-                  clusterSelect.dispatchEvent(new Event("change", { bubbles: true }));
-                  await delay(800);
-                }
-                const saveBtn = await waitForButtonWithText("Create rule");
-                if (saveBtn) {
-                  saveBtn.click();
-                }
-              }
-            }
-          }
-        }
-  
-        // 4. Infrastructure Page autopilot actions
-        // if (pathname === "/dashboard/infrastructure") {
-        //   if (stepIndex === 4) {
-        //     const addBtn = await waitForElement("#infra-set-alert-btn");
-        //     if (addBtn) {
-        //       addBtn.click();
-        //       const saveBtn = await waitForButtonWithText("Create alert");
-        //       if (saveBtn) {
-        //         saveBtn.click();
-        //       }
-        //     }
-        //   }
-        // }
-      } catch (err) {
-        console.error("Autopilot error:", err);
-      } finally {
-        if (activeEffect) {
-          setIsAutopilotExecuting(false);
-        }
-      }
-    };
 
-    runAutopilotAction();
-    return () => {
-      activeEffect = false;
-    };
+          // 2. Channels Page autopilot actions
+          if (pathname === "/settings/channels") {
+            if (stepIndex === 1) {
+              const addBtn = await waitForElement("#add-channel-btn");
+              if (addBtn) {
+                addBtn.click();
+                await delay(1200);
+                const closeBtn = await waitForButtonWithText("Cancel");
+                if (closeBtn) {
+                  closeBtn.click();
+                }
+              }
+            }
+          }
+        } catch (err) {
+          console.error("Autopilot error:", err);
+        } finally {
+          if (activeEffect) {
+            setIsAutopilotExecuting(false);
+          }
+        }
+      };
+
+      runAutopilotAction();
+      return () => {
+        activeEffect = false;
+      };
+    }
   }, [pathname, stepIndex, active, autoPlay]);
 
   // Handle auto-advancing when timeLeft hits 0
@@ -891,13 +721,7 @@ export default function PageTutorial() {
           if (typeof window !== "undefined") {
             localStorage.setItem("sv_auto_tour_page_index", String(idx + 1));
           }
-          if (nextPage === "/cluster/infrastructure") {
-            getTourClusterId().then(clusterId => {
-              router.push(`/cluster/${clusterId}/infrastructure`);
-            });
-          } else {
-            router.push(nextPage);
-          }
+          router.push(nextPage);
         } else {
           endTour();
         }
@@ -908,26 +732,22 @@ export default function PageTutorial() {
   // Calculate coordinates and style for Guide Card
   const getCardStyle = (): React.CSSProperties => {
     if (targetRect) {
-      const cardWidth = 360;
+      const cardWidth = 380;
       const cardHeight = 240;
       const buffer = 16;
       let top = targetRect.bottom + buffer;
       let left = targetRect.left + targetRect.width / 2 - cardWidth / 2;
 
-      // Bound checking horizontally
       if (left < buffer) {
         left = buffer;
       } else if (left + cardWidth > window.innerWidth - buffer) {
         left = window.innerWidth - cardWidth - buffer;
       }
 
-      // Check if there is enough height below the element
       const spaceBelow = window.innerHeight - targetRect.bottom;
       if (spaceBelow < cardHeight + buffer * 2) {
-        // Place above target
         top = targetRect.top - cardHeight - buffer;
         if (top < buffer) {
-          // If no space above either, fallback to centering in screen space
           return {
             top: "50%",
             left: "50%",
@@ -944,7 +764,6 @@ export default function PageTutorial() {
       };
     }
 
-    // Default screen center fallback
     return {
       top: "50%",
       left: "50%",
@@ -958,7 +777,6 @@ export default function PageTutorial() {
   }
 
   const cardStyle = getCardStyle();
-  const isCentered = !targetRect;
 
   return (
     <div className="fixed inset-0 z-[9997] select-none">
@@ -1013,7 +831,7 @@ export default function PageTutorial() {
             <div className="flex items-center gap-2">
               <div className="flex items-center gap-1.5 text-xs font-bold uppercase tracking-wider">
                 <Sparkles className="w-4 h-4 text-amber-500 animate-spin" style={{ animationDuration: "3s" }} />
-                <span>Srevox Guide</span>
+                <span>DB Auditor Guide</span>
               </div>
               <span className="px-1.5 py-0.5 text-[9px] font-bold bg-indigo-50 dark:bg-indigo-500/10 text-indigo-650 dark:text-indigo-400 rounded-md">
                 Step {stepIndex + 1} of {steps.length}

@@ -18,13 +18,13 @@ export default async function serviceOwnerRoutes(app: FastifyInstance) {
     const owners = await sql`
       SELECT
         so.*,
-        c.name       as cluster_name,
+        so.cluster_id as cluster_name,
         CASE
           WHEN ch.channel_id IS NOT NULL THEN so.alert_source_channel_id
           ELSE NULL
         END as alert_source_channel_id
       FROM service_owners so
-      LEFT JOIN clusters c ON so.cluster_id    = c.cluster_id
+      
       LEFT JOIN channels ch ON so.alert_source_channel_id = ch.channel_id
       WHERE so.org_id = ${org_id}
       ORDER BY so.created_at DESC
@@ -118,8 +118,7 @@ export default async function serviceOwnerRoutes(app: FastifyInstance) {
       return reply.status(400).send({ detail: "cluster_id is required" });
 
     // Verify cluster belongs to this org
-    const [cluster] = await sql`SELECT cluster_id AS id FROM clusters WHERE cluster_id = ${cluster_id} AND org_id = ${org_id}`;
-    if (!cluster) return reply.status(404).send({ detail: "Cluster not in your org" });
+    // Cluster check bypassed for standalone DB Auditor
 
     if (user_ids && user_ids.length > 0) {
       const users = await sql`SELECT user_id FROM users WHERE user_id = ANY(${user_ids}) AND org_id = ${org_id}`;
@@ -201,8 +200,7 @@ export default async function serviceOwnerRoutes(app: FastifyInstance) {
       return reply.status(400).send({ detail: "cluster_id is required" });
 
     // Verify cluster belongs to this org
-    const [cluster] = await sql`SELECT cluster_id AS id FROM clusters WHERE cluster_id = ${cluster_id} AND org_id = ${org_id}`;
-    if (!cluster) return reply.status(404).send({ detail: "Cluster not in your org" });
+    // Cluster check bypassed for standalone DB Auditor
 
     const results = [];
     for (const item of services) {
@@ -383,13 +381,13 @@ export default async function serviceOwnerRoutes(app: FastifyInstance) {
     const [owner] = await sql`
       SELECT
         so.*,
-        c.name       as cluster_name,
+        so.cluster_id as cluster_name,
         CASE
           WHEN ch.channel_id IS NOT NULL THEN so.alert_source_channel_id
           ELSE NULL
         END as alert_source_channel_id
       FROM service_owners so
-      LEFT JOIN clusters c ON so.cluster_id    = c.cluster_id
+      
       LEFT JOIN channels ch ON so.alert_source_channel_id = ch.channel_id
       WHERE so.service_owner_id = ${id} AND so.org_id = ${org_id}
     `;
@@ -605,8 +603,7 @@ export default async function serviceOwnerRoutes(app: FastifyInstance) {
     }
 
     if (cluster_id !== undefined && cluster_id !== null) {
-      const [cluster] = await sql`SELECT cluster_id AS id FROM clusters WHERE cluster_id = ${cluster_id} AND org_id = ${org_id}`;
-      if (!cluster) return reply.status(404).send({ detail: "Cluster not in your org" });
+      // Cluster check bypassed for standalone DB Auditor
     }
 
     if (user_ids !== undefined) {
@@ -799,7 +796,7 @@ export default async function serviceOwnerRoutes(app: FastifyInstance) {
     const [owner] = await sql`
       SELECT so.*, c.name as cluster_name
       FROM service_owners so
-      LEFT JOIN clusters c ON so.cluster_id = c.cluster_id
+      
       WHERE so.service_owner_id = ${id} AND so.org_id = ${org_id}
     `;
     if (!owner) return reply.status(404).send({ detail: "Service not found" });

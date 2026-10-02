@@ -2,143 +2,136 @@ import { FastifyRequest, FastifyReply } from "fastify";
 import sql from "../db/sql.js";
 
 export interface JWTPayload {
-  sub:    string;
+  sub: string;
+  email: string;
+  role: string;
   org_id: string;
-  role:   string;
-  email:  string;
+  type?: string;
 }
 
-// Extract JWT payload from request
 export function getUser(req: FastifyRequest): JWTPayload {
-  return req.user as JWTPayload;
+  return (req.user as JWTPayload) || { sub: "", email: "", role: "viewer", org_id: "" };
 }
 
-// Role hierarchy
-const ROLE_RANK: Record<string, number> = {
-  viewer: 1,
-  member: 2,
-  admin:  3,
-};
-
-// Require minimum role — use as onRequest hook
-export function requireRole(minRole: "viewer" | "member" | "admin") {
+export function requireRole(allowedRoles: string | string[]) {
+  const roles = Array.isArray(allowedRoles) ? allowedRoles : [allowedRoles];
   return async (req: FastifyRequest, reply: FastifyReply) => {
-    const user = req.user as JWTPayload;
-    if (!user) return reply.status(401).send({ detail: "Unauthorized" });
-    const userRank = ROLE_RANK[user.role] ?? 0;
-    const minRank  = ROLE_RANK[minRole]  ?? 99;
-    if (userRank < minRank) {
-      return reply.status(403).send({
-        detail: `Requires ${minRole} role. Your role: ${user.role}`,
-      });
+    const user = getUser(req);
+    if (!user || !user.role) {
+      return reply.status(401).send({ detail: "Unauthorized" });
+    }
+    if (user.role?.toLowerCase() === "admin") return; // Admin bypass
+    if (!roles.includes(user.role)) {
+      return reply.status(403).send({ detail: "Forbidden: insufficient permissions" });
     }
   };
 }
 
-// Permission matrix
+// Permission matrix aligning with DB Auditor capabilities
 export const CAN = {
-  // Incidents
-  viewIncidents:      ["viewer", "member", "admin"],
-  acknowledgeIncident:["member", "admin"],
-  resolveIncident:    ["member", "admin"],
-  runDiagnosis:       ["member", "admin"],
-  deleteIncident:     ["admin"],
+  // Database Connectors & CDC Streams
+  viewConnectors:      ["viewer", "member", "auditor", "admin"],
+  addConnector:        ["admin"],
+  deleteConnector:     ["admin"],
+  testConnector:       ["member", "auditor", "admin"],
+  viewStream:          ["viewer", "member", "auditor", "admin"],
 
-  // Clusters
-  viewClusters:   ["viewer", "member", "admin"],
-  addCluster:     ["admin"],
-  deleteCluster:  ["admin"],
+  // Audit Ledgers & Row Diffs
+  viewRowDiff:         ["member", "auditor", "admin"],
+  viewPii:             ["auditor", "admin"],
+  exportAudit:         ["auditor", "admin"],
+  purgeAudit:          ["admin"],
 
-  // Channels
-  viewChannels:   ["viewer", "member", "admin"],
-  addChannel:     ["admin"],
-  deleteChannel:  ["admin"],
-  testChannel:    ["member", "admin"],
+  // Data Retention & Storage
+  changeRetention:     ["admin"],
+  clearRetentionHistory:["admin"],
 
-  // Alert Rules
-  viewRules:      ["viewer", "member", "admin"],
-  addRule:        ["admin"],
-  deleteRule:     ["admin"],
-  toggleRule:     ["member", "admin"],
+  // Masking & Compliance Rules
+  viewMaskingRules:    ["viewer", "member", "auditor", "admin"],
+  manageMaskingRules:  ["admin"],
 
-  // Team / Users
-  viewTeam:       ["member", "admin"],
-  inviteUser:     ["admin"],
-  removeUser:     ["admin"],
-  changeRole:     ["admin"],
+  // Notification Channels & Alert Preferences
+  viewChannels:        ["viewer", "member", "auditor", "admin"],
+  addChannel:          ["admin"],
+  deleteChannel:       ["admin"],
+  testChannel:         ["member", "auditor", "admin"],
 
-  // Service Owners
-  viewServiceOwners:   ["viewer", "member", "admin"],
+  // Team / Access Control
+  viewTeam:            ["member", "auditor", "admin"],
+  inviteUser:          ["admin"],
+  removeUser:          ["admin"],
+  changeRole:          ["admin"],
+  changeSudoLock:      ["admin"],
+  viewApiDocs:         ["viewer", "member", "auditor", "admin"],
+
+  // Analytics & Activity Logs
+  viewAnalytics:       ["auditor", "admin"],
+  viewActivityLog:     ["auditor", "admin"],
+
+  // Backward-compatible aliases
+  viewIncidents:       ["viewer", "member", "auditor", "admin"],
+  acknowledgeIncident: ["member", "auditor", "admin"],
+  resolveIncident:     ["member", "auditor", "admin"],
+  runDiagnosis:        ["member", "auditor", "admin"],
+  deleteIncident:      ["admin"],
+  viewClusters:        ["viewer", "member", "auditor", "admin"],
+  addCluster:          ["admin"],
+  deleteCluster:       ["admin"],
+  viewRules:           ["viewer", "member", "auditor", "admin"],
+  addRule:             ["admin"],
+  deleteRule:          ["admin"],
+  toggleRule:          ["member", "auditor", "admin"],
+  viewServiceOwners:   ["viewer", "member", "auditor", "admin"],
   addServiceOwner:     ["admin"],
   deleteServiceOwner:  ["admin"],
-
-  // Analytics
-  viewAnalytics:  ["admin"],
-  viewActivityLog: ["admin"],
-
-  // Machines & Host Nodes
-  viewMachines:   ["viewer", "member", "admin"],
-  addMachine:     ["admin"],
-  deleteMachine:  ["admin"],
-
-  // More Settings
-  changeSudoLock: ["admin"],
-  changeRetention: ["admin"],
-  systemAlerts: ["admin"],
-  viewApiDocs: ["viewer", "member", "admin"],
+  viewMachines:        ["viewer", "member", "auditor", "admin"],
+  addMachine:          ["admin"],
+  deleteMachine:       ["admin"],
 };
 
 export const PERMISSION_IDS: Record<string, { categoryId: string; id: string }> = {
-  // Incidents (Category: "inci3hbr43hb")
-  viewIncidents:       { categoryId: "inci3hbr43hb", id: "vie3jrhb4r" },
-  acknowledgeIncident: { categoryId: "inci3hbr43hb", id: "ack4rnf4jbf" },
-  resolveIncident:     { categoryId: "inci3hbr43hb", id: "res34f4hfb" },
-  runDiagnosis:        { categoryId: "inci3hbr43hb", id: "run45g4hfb" },
-  deleteIncident:      { categoryId: "inci3hbr43hb", id: "del56h4hfb" },
+  // Database Connectors (Category: "cat_connectors")
+  viewConnectors:       { categoryId: "cat_connectors", id: "dbc_view" },
+  addConnector:         { categoryId: "cat_connectors", id: "dbc_add" },
+  deleteConnector:      { categoryId: "cat_connectors", id: "dbc_del" },
+  testConnector:        { categoryId: "cat_connectors", id: "dbc_test" },
+  viewStream:           { categoryId: "cat_connectors", id: "dbc_stream" },
 
-  // Clusters (Category: "clu4rhbrhb")
-  viewClusters:        { categoryId: "clu4rhbrhb", id: "vie45g4hfb" },
-  addCluster:          { categoryId: "clu4rhbrhb", id: "add56h4hfb" },
-  deleteCluster:       { categoryId: "clu4rhbrhb", id: "del67i4hfb" },
+  // Audit Ledgers & Row Diffs (Category: "cat_audit")
+  viewRowDiff:          { categoryId: "cat_audit", id: "aud_diff" },
+  viewPii:              { categoryId: "cat_audit", id: "aud_pii" },
+  exportAudit:          { categoryId: "cat_audit", id: "aud_export" },
+  purgeAudit:           { categoryId: "cat_audit", id: "aud_purge" },
 
-  // Machines (Category: "mac90l4hfb")
-  viewMachines:        { categoryId: "mac90l4hfb", id: "vie01mac" },
-  addMachine:          { categoryId: "mac90l4hfb", id: "add02mac" },
-  deleteMachine:       { categoryId: "mac90l4hfb", id: "del03mac" },
+  // Data Retention & Storage (Category: "cat_retention")
+  changeRetention:      { categoryId: "cat_retention", id: "ret_change" },
+  clearRetentionHistory:{ categoryId: "cat_retention", id: "ret_clear" },
 
-  // Channels (Category: "cha56h4hfb")
-  viewChannels:        { categoryId: "cha56h4hfb", id: "vie56h4hfb" },
-  addChannel:          { categoryId: "cha56h4hfb", id: "add67i4hfb" },
-  deleteChannel:       { categoryId: "cha56h4hfb", id: "del78j4hfb" },
-  testChannel:         { categoryId: "cha56h4hfb", id: "tes89k4hfb" },
+  // Masking & Compliance Rules (Category: "cat_masking")
+  viewMaskingRules:     { categoryId: "cat_masking", id: "msk_view" },
+  manageMaskingRules:   { categoryId: "cat_masking", id: "msk_edit" },
 
-  // Alert Rules (Category: "rul67i4hfb")
-  viewRules:           { categoryId: "rul67i4hfb", id: "vie67i4hfb" },
-  addRule:             { categoryId: "rul67i4hfb", id: "add78j4hfb" },
-  deleteRule:          { categoryId: "rul67i4hfb", id: "del89k4hfb" },
-  toggleRule:          { categoryId: "rul67i4hfb", id: "tog90l4hfb" },
+  // Channels (Category: "cat_channels")
+  viewChannels:         { categoryId: "cat_channels", id: "cha_view" },
+  addChannel:           { categoryId: "cat_channels", id: "cha_add" },
+  deleteChannel:        { categoryId: "cat_channels", id: "cha_del" },
+  testChannel:          { categoryId: "cat_channels", id: "cha_test" },
 
-  // Team / Access Control (Category: "tea78j4hfb")
-  viewTeam:            { categoryId: "tea78j4hfb", id: "vie78j4hfb" },
-  inviteUser:          { categoryId: "tea78j4hfb", id: "inv89k4hfb" },
-  removeUser:          { categoryId: "tea78j4hfb", id: "rem90l4hfb" },
-  changeRole:          { categoryId: "tea78j4hfb", id: "cha01m4hfb" },
-  changeSudoLock:      { categoryId: "tea78j4hfb", id: "sud90l4hfb" },
-  viewApiDocs:         { categoryId: "tea78j4hfb", id: "api90l4hfb" },
+  // Team / Access Control (Category: "cat_team")
+  viewTeam:             { categoryId: "cat_team", id: "tea_view" },
+  inviteUser:           { categoryId: "cat_team", id: "tea_invite" },
+  removeUser:           { categoryId: "cat_team", id: "tea_remove" },
+  changeRole:           { categoryId: "cat_team", id: "tea_role" },
+  changeSudoLock:       { categoryId: "cat_team", id: "tea_sudo" },
+  viewApiDocs:          { categoryId: "cat_team", id: "tea_api" },
 
-  // Service Owners (Category: "own89k4hfb")
-  viewServiceOwners:   { categoryId: "own89k4hfb", id: "vie02n4hfb" },
-  addServiceOwner:     { categoryId: "own89k4hfb", id: "add03o4hfb" },
-  deleteServiceOwner:  { categoryId: "own89k4hfb", id: "del04p4hfb" },
-
-  // Analytics (Category: "ana89k4hfb")
-  viewAnalytics:       { categoryId: "ana89k4hfb", id: "vie89k4hfb" },
-  viewActivityLog:     { categoryId: "ana89k4hfb", id: "vie90l4hfb" },
-  changeRetention:     { categoryId: "ana89k4hfb", id: "ret90l4hfb" },
-  systemAlerts:        { categoryId: "ana89k4hfb", id: "sys90l4hfb" },
+  // Analytics & Activity (Category: "cat_analytics")
+  viewAnalytics:        { categoryId: "cat_analytics", id: "ana_view" },
+  viewActivityLog:      { categoryId: "cat_analytics", id: "ana_logs" },
 };
 
 export function hasPermission(role: string, action: keyof typeof CAN): boolean {
+  if (role === "admin") return true;
   return CAN[action]?.includes(role) ?? false;
 }
 
@@ -168,7 +161,6 @@ export function checkPermissionsObject(permissions: any, action: string, resourc
       }
     }
   } else {
-    // If no specific resourceId is passed, check if the user has the global permission OR any specific resource true
     if (permObj.value === true) return true;
     if (permObj.resources && Array.isArray(permObj.resources)) {
       if (permObj.resources.some((r: any) => r && r.value === true)) {
@@ -186,9 +178,9 @@ function getResourceId(req: FastifyRequest): string | undefined {
   const query = (req.query || {}) as Record<string, string>;
   const body = (req.body || {}) as Record<string, any>;
 
-  return params.id || params.cluster_id || params.channel_id || params.rule_id ||
-         query.cluster_id || query.channel_id || query.rule_id ||
-         body.cluster_id || body.channel_id || body.rule_id;
+  return params.id || params.connector_id || params.channel_id ||
+         query.connector_id || query.channel_id ||
+         body.connector_id || body.channel_id;
 }
 
 export function mergePermissions(userPerms: any, groupsPerms: any[]): any {
@@ -235,11 +227,13 @@ export function mergePermissions(userPerms: any, groupsPerms: any[]): any {
   return merged;
 }
 
-// Require permission — check DB custom overrides, fallback to role defaults
 export function requirePermission(action: keyof typeof CAN) {
   return async (req: FastifyRequest, reply: FastifyReply) => {
     const user = req.user as JWTPayload;
     if (!user) return reply.status(401).send({ detail: "Unauthorized" });
+
+    // Universal Admin Bypass
+    if (user.role === "admin") return;
 
     try {
       const [dbUser] = await sql`
@@ -249,7 +243,8 @@ export function requirePermission(action: keyof typeof CAN) {
         return reply.status(401).send({ detail: "User session is invalid or inactive — please log in again" });
       }
 
-      // Fetch group permissions
+      if (dbUser.role?.toLowerCase() === "admin") return;
+
       const groupPermsList = await sql`
         SELECT g.permissions
         FROM groups g

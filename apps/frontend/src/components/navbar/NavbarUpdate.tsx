@@ -67,7 +67,7 @@ export default function NavbarUpdate() {
     return (
       <div className="relative group">
         <Link
-          href="/settings/more-settings?tab=update"
+          href="/settings/updates"
           className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-amber-50 dark:hover:bg-amber-500/10 text-amber-500 transition-all relative group"
           title={`New version ${latestVersion} available`}
         >
@@ -107,7 +107,7 @@ export default function NavbarUpdate() {
   return (
     <div className="relative group">
       <Link
-        href="/settings/more-settings?tab=update"
+        href="/settings/updates"
         className="w-9 h-9 flex items-center justify-center rounded-xl hover:bg-emerald-50 dark:hover:bg-emerald-500/10 text-emerald-500 transition-all relative group"
         title={`Up to Date (${currentVersion})`}
       >

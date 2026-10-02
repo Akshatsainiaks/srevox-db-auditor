@@ -1,0 +1,15 @@
+apiVersion: v2
+name: srevox-db-auditor
+description: Srevox DB Auditor - Enterprise Database Audit & Change Intelligence Platform
+type: application
+version: 1.0.3
+appVersion: 1.0.3
+keywords:
+  - sre
+  - observability
+  - monitoring
+  - incidents
+  - kubernetes
+maintainers:
+  - name: Srevox Engineering
+    email: support@srevox.com

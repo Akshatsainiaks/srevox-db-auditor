@@ -186,7 +186,7 @@ export default function UpdateAnnouncement() {
 
             <div className="flex flex-wrap items-center gap-3">
               <Link
-                href="/settings/more-settings?tab=update"
+                href="/settings/updates"
                 onClick={() => setIsVisible(false)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-indigo-600 hover:bg-indigo-700 active:bg-indigo-800 text-white transition shadow-sm"
               >
@@ -241,7 +241,7 @@ export default function UpdateAnnouncement() {
           <div className="flex items-center gap-4">
             <div className="flex items-center gap-2">
               <Link
-                href="/settings/more-settings?tab=update"
+                href="/settings/updates"
                 onClick={() => setIsVisible(false)}
                 className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold rounded-lg bg-white text-indigo-700 hover:bg-slate-50 active:bg-slate-100 transition shadow-sm"
               >

@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { Loader2, X, Info } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Loader2, X, Info, Settings } from "lucide-react";
 import { fetchChannel, updateChannel } from "@/lib/api";
 import { useToast } from "@/components/Toast";
 
@@ -21,8 +21,8 @@ const FIELDS: Record<ChannelType, FieldConfig[]> = {
     { key: "smtp_host", label: "SMTP Host", placeholder: "smtp.gmail.com", required: true },
     { key: "smtp_port", label: "SMTP Port", placeholder: "587", required: true },
     { key: "smtp_user", label: "SMTP Username", placeholder: "you@gmail.com", required: true },
-    { key: "smtp_pass", label: "SMTP App Password", placeholder: "••••••••", secret: true, hint: "Use Gmail App Password", required: true },
-    { key: "from", label: "From Email Address", placeholder: "you@gmail.com", required: false, hint: "For Outlook/Office365, this must match SMTP Username. Defaults to SMTP Username if empty." },
+    { key: "smtp_pass", label: "SMTP App Password", placeholder: "••••••••", secret: true, hint: "Leave blank to keep existing password", required: false },
+    { key: "from", label: "From Email Address", placeholder: "alerts@company.com", required: true },
     { key: "to", label: "Recipient To Email(s) (comma-separated)", placeholder: "eng@company.com, admin@company.com", required: true },
     { key: "cc", label: "Recipient CC Email(s) (comma-separated)", placeholder: "dev-cc@company.com", required: false },
     { key: "bcc", label: "Recipient BCC Email(s) (comma-separated)", placeholder: "archive@company.com", required: false },
@@ -33,15 +33,15 @@ const FIELDS: Record<ChannelType, FieldConfig[]> = {
   whatsapp: [
     { key: "provider", label: "Provider Service", placeholder: "twilio", required: true },
     { key: "account_sid", label: "Twilio Account SID", placeholder: "ACxxxxxxxx", required: true },
-    { key: "auth_token", label: "Twilio Auth Token", placeholder: "••••••••", secret: true, required: true },
+    { key: "auth_token", label: "Twilio Auth Token", placeholder: "••••••••", secret: true, hint: "Leave blank to keep existing token", required: false },
     { key: "from", label: "WhatsApp Sender Number", placeholder: "+14155238886", required: true },
     { key: "phone_number_id", label: "Meta Phone Number ID", placeholder: "10987654321", required: true },
-    { key: "token", label: "Meta Access Token", placeholder: "••••••••", secret: true, required: true },
+    { key: "token", label: "Meta Access Token", placeholder: "••••••••", secret: true, hint: "Leave blank to keep existing token", required: false },
     { key: "to", label: "Recipient Phone Numbers (comma-separated)", placeholder: "+919876543210, +19876543210", required: true },
   ],
   webhook: [
     { key: "url", label: "Webhook URL Endpoint", placeholder: "https://hooks.slack.com/services/...", required: true },
-    { key: "secret", label: "Webhook Signing Secret (optional)", placeholder: "my-webhook-secret", secret: true, required: false },
+    { key: "secret", label: "Webhook Signing Secret (optional)", placeholder: "••••••••", secret: true, hint: "Leave blank to keep existing secret", required: false },
   ],
 };
 
@@ -70,16 +70,16 @@ const CHANNEL_LABELS: Record<ChannelType, string> = {
 export default function EditModal({
   channelId,
   onClose,
-  onSaved
+  onSaved,
+  onUpdated,
 }: {
   channelId: string;
   onClose: () => void;
   onSaved: () => void;
+  onUpdated?: () => void;
 }) {
   const [name, setName] = useState("");
   const [type, setType] = useState<ChannelType>("email");
-  const [channelType, setChannelType] = useState<"normal" | "service_owner">("normal");
-  const [isGlobalDefault, setIsGlobalDefault] = useState(false);
   const [cfg, setCfg] = useState<Record<string, string>>({});
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -87,14 +87,15 @@ export default function EditModal({
 
   useEffect(() => {
     fetchChannel(channelId)
-      .then((res) => {
-        setName(res.name);
-        setType(res.type);
-        setChannelType(res.channel_type || "normal");
-        setIsGlobalDefault(res.is_global_default || false);
-        setCfg({ provider: "twilio", ...(res.config || {}) });
+      .then((ch: any) => {
+        setName(ch.name);
+        setType(ch.type as ChannelType);
+        setCfg(ch.config || {});
       })
-      .catch(console.error)
+      .catch((err: any) => {
+        error("Failed to load channel", err.response?.data?.detail || err.message || "An unexpected error occurred");
+        onClose();
+      })
       .finally(() => setLoading(false));
   }, [channelId]);
 
@@ -102,13 +103,7 @@ export default function EditModal({
 
   const isFormValid = () => {
     if (!name.trim()) return false;
-
     const displayedFields = FIELDS[type].filter((f) => {
-      if (type === "email") {
-        if (channelType === "service_owner" && (f.key === "to" || f.key === "cc" || f.key === "bcc")) {
-          return false;
-        }
-      }
       if (type !== "whatsapp") return true;
       const prov = cfg.provider || "twilio";
       if (f.key === "provider" || f.key === "to") return true;
@@ -131,49 +126,21 @@ export default function EditModal({
 
   const submit = async () => {
     if (!isFormValid()) return;
-
-    if (type === "email" && channelType === "normal") {
-      const smtpUser = cfg.smtp_user || "";
-      const fromEmail = cfg.from || "";
-      const recipientList = cfg.to || "";
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-
-      if (!emailRegex.test(smtpUser.trim())) {
-        error("Validation Error", "SMTP Username must be a valid email address.");
-        return;
-      }
-      if (fromEmail.trim() && !emailRegex.test(fromEmail.trim())) {
-        error("Validation Error", "From Email Address must be a valid email address.");
-        return;
-      }
-
-      const recipients = recipientList.split(",").map(r => r.trim()).filter(Boolean);
-      if (recipients.length === 0) {
-        error("Validation Error", "Please provide at least one recipient email address.");
-        return;
-      }
-      for (const rec of recipients) {
-        if (!emailRegex.test(rec)) {
-          error("Validation Error", `"${rec}" is not a valid recipient email address.`);
-          return;
-        }
-      }
-    }
-
     setSaving(true);
     try {
       await updateChannel(channelId, {
-        name,
+        name: name.trim(),
         config: cfg,
-        channel_type: type === "email" ? channelType : "normal",
-        is_global_default: type === "email" && channelType === "service_owner" ? isGlobalDefault : false
+        channel_type: "normal",
+        is_global_default: false,
       });
-      success("Channel Updated", `Successfully updated settings for ${name}`);
-      onSaved();
+
+      success("Channel updated", `Alert channel "${name}" has been updated.`);
+      if (onSaved) onSaved();
+      if (onUpdated) onUpdated();
       onClose();
-    } catch (e: any) {
-      console.error(e);
-      error("Failed to Save Changes", e?.response?.data?.detail || "An error occurred while updating channel settings");
+    } catch (err: any) {
+      error("Failed to update channel", err.response?.data?.detail || err.message || "An unexpected error occurred");
     } finally {
       setSaving(false);
     }
@@ -181,89 +148,52 @@ export default function EditModal({
 
   if (loading) {
     return (
-      <div className="fixed inset-0 bg-[#07080d]/75 backdrop-blur-[6px] flex items-center justify-center z-50 p-4">
-        <div className="bg-white dark:bg-[#13151f] rounded-3xl p-8 border border-gray-100 dark:border-slate-800/80 shadow-2xl flex items-center justify-center">
-          <Loader2 className="w-8 h-8 animate-spin text-indigo-500" />
+      <div className="fixed inset-0 z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+        <div className="p-8 bg-white dark:bg-[#11131a] rounded-2xl flex flex-col items-center gap-3">
+          <Loader2 className="w-6 h-6 animate-spin text-indigo-500" />
+          <span className="text-xs text-gray-500">Loading channel configuration...</span>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="fixed inset-0 bg-[#07080d]/75 backdrop-blur-[6px] flex items-center justify-center z-50 p-4 animate-modal-fade-in">
+    <div className="fixed inset-0 overflow-hidden z-[100] flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs animate-modal-fade-in">
       {modalStyles}
-      <div className="bg-white dark:bg-[#13151f] rounded-3xl shadow-2xl border border-gray-100 dark:border-slate-800/80 w-full max-w-lg max-h-[90vh] overflow-hidden flex flex-col animate-modal-slide-up">
+      <div 
+        className="w-full max-w-lg bg-white dark:bg-[#11131a] border border-gray-200 dark:border-slate-800 rounded-3xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] animate-modal-slide-up"
+      >
         {/* Header */}
-        <div className="px-6 py-5 border-b border-gray-150 dark:border-slate-800/60 flex items-center justify-between bg-white dark:bg-[#13151f] shrink-0">
+        <div className="px-6 py-5 border-b border-gray-100 dark:border-slate-800/60 flex items-center justify-between shrink-0">
           <div>
-            <h2 className="font-bold text-gray-900 dark:text-white text-base">Edit Alert Channel</h2>
-            <p className="text-xs text-gray-450 dark:text-slate-500 mt-0.5">Modify settings and credentials for this channel</p>
+            <h3 className="font-bold text-gray-900 dark:text-white text-base">Edit Alert Channel</h3>
+            <p className="text-xs text-gray-400 dark:text-slate-500 mt-0.5">{CHANNEL_LABELS[type]} settings</p>
           </div>
-          <button
-            onClick={onClose}
-            className="w-8 h-8 flex items-center justify-center rounded-xl hover:bg-gray-100 dark:hover:bg-slate-800/60 text-gray-400 hover:text-gray-600 dark:hover:text-slate-200 transition-colors"
+          <button 
+            onClick={onClose} 
+            className="w-8 h-8 rounded-full flex items-center justify-center text-gray-400 hover:text-gray-600 dark:hover:text-white hover:bg-gray-100 dark:hover:bg-slate-800 transition-colors"
           >
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Form Content */}
-        <div className="p-6 space-y-5 overflow-y-auto flex-1 scrollbar-thin">
+        {/* Content Area */}
+        <div className="p-6 overflow-y-auto space-y-6 flex-1">
+          {/* Channel Name */}
           <div className="space-y-1.5">
             <label className="block text-[11px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
               Channel Name <span className="text-red-500 font-bold">*</span>
             </label>
             <input
               className="input w-full"
-              placeholder="e.g. Engineering On-Call Alerts"
+              placeholder="e.g. Production Alerts"
               value={name}
               onChange={(e) => setName(e.target.value)}
               autoFocus
             />
           </div>
 
-          <div className="space-y-1.5">
-            <label className="block text-[11px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider">Channel Type</label>
-            <div className="px-4 py-3 rounded-2xl border border-gray-200 dark:border-slate-800 bg-gray-50 dark:bg-slate-900/50 text-xs font-semibold text-gray-550 dark:text-slate-400 flex items-center gap-2 capitalize">
-              <span className="w-2 h-2 rounded-full bg-indigo-500"></span>
-              {CHANNEL_LABELS[type]} (Type cannot be modified)
-            </div>
-          </div>
-
-          {/* Mail Channel Type Selector (Normal vs Service Owner) */}
-          {type === "email" && (
-            <div className="space-y-1.5 pt-2 border-t border-gray-100 dark:border-slate-800/60">
-              <label className="block text-[11px] font-bold text-gray-400 dark:text-slate-500 uppercase tracking-wider">
-                Mail Routing Configuration
-              </label>
-              <div className="grid grid-cols-2 gap-2 mt-1 bg-gray-50 dark:bg-slate-800/40 p-1 rounded-xl border border-gray-150 dark:border-slate-800/60">
-                <button
-                  type="button"
-                  onClick={() => setChannelType("normal")}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold tracking-wide transition-all ${
-                    channelType === "normal"
-                      ? "bg-white dark:bg-slate-850 text-indigo-600 dark:text-indigo-400 shadow-sm border border-gray-150 dark:border-slate-800"
-                      : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"
-                  }`}
-                >
-                  Normal (Static Recipients)
-                </button>
-                <button
-                  type="button"
-                  onClick={() => setChannelType("service_owner")}
-                  className={`py-2 px-3 rounded-lg text-xs font-bold tracking-wide transition-all ${
-                    channelType === "service_owner"
-                      ? "bg-white dark:bg-slate-850 text-indigo-600 dark:text-indigo-400 shadow-sm border border-gray-150 dark:border-slate-800"
-                      : "text-gray-500 dark:text-slate-400 hover:text-gray-700 dark:hover:text-slate-200"
-                  }`}
-                >
-                  Service Owner Creds
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Dynamic Fields - Renders immediately */}
+          {/* Dynamic Fields */}
           <div className="space-y-4 pt-2 border-t border-gray-100 dark:border-slate-800/60">
             {type === "teams" && (
               <div className="bg-amber-50/50 dark:bg-amber-500/[0.03] border border-amber-150 dark:border-amber-500/20 p-4 rounded-2xl flex items-start gap-3 select-none">
@@ -282,23 +212,8 @@ export default function EditModal({
                 </div>
               </div>
             )}
-            {type === "email" && channelType === "service_owner" && (
-              <div className="bg-indigo-50/50 dark:bg-indigo-500/[0.03] border border-indigo-150 dark:border-indigo-500/20 p-4 rounded-2xl flex items-start gap-3 select-none">
-                <Info className="w-4 h-4 text-indigo-600 dark:text-indigo-500 shrink-0 mt-0.5" />
-                <div className="space-y-1.5 flex-1">
-                  <p className="text-xs font-bold text-indigo-800 dark:text-indigo-400">Dynamic Service Owners Routing Active</p>
-                  <p className="text-[11px] text-indigo-700/80 dark:text-indigo-400/70 leading-relaxed">
-                    By configuring this as a Service Owner channel, alert emails will route dynamically to the matched owners and CC/BCC settings of each individual service on the Service Owners registry.
-                  </p>
-                </div>
-              </div>
-            )}
+
             {FIELDS[type].filter((f) => {
-              if (type === "email") {
-                if (channelType === "service_owner" && (f.key === "to" || f.key === "cc" || f.key === "bcc")) {
-                  return false;
-                }
-              }
               if (type !== "whatsapp") return true;
               const prov = cfg.provider || "twilio";
               if (f.key === "provider" || f.key === "to") return true;
@@ -349,8 +264,6 @@ export default function EditModal({
                 {f.hint && <p className="text-[10px] text-gray-450 dark:text-slate-500 mt-1 pl-1">{f.hint}</p>}
               </div>
             ))}
-
-
           </div>
         </div>
 

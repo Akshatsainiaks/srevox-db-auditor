@@ -18,7 +18,8 @@ const ROLE_COLORS: Record<string, string> = {
 
 export default function NavbarProfile() {
   const router = useRouter();
-  const websiteUrl = process.env.NEXT_PUBLIC_WEBSITE_URL || "https://srevox-website.vercel.app";
+  const websiteUrl = process.env.NEXT_PUBLIC_WEBSITE_URL || "https://www.srevox.in";
+  const docsUrl = process.env.NEXT_PUBLIC_DOCS_URL || "https://docs.srevox.in";
   const { theme, setTheme } = useTheme();
   const [profileOpen, setProfileOpen] = useState(false);
   const [user, setUserState] = useState<AuthUser | null>(getUser());
@@ -97,7 +98,7 @@ export default function NavbarProfile() {
           <div className="p-2 space-y-0.5">
             {[
               { href: "/settings/profile", icon: User, label: "Profile & Settings", sub: "Account, password" },
-              { href: `${websiteUrl}/docs`, icon: ExternalLink, label: "Documentation", sub: "Opens in new tab", target: "_blank" },
+              { href: docsUrl, icon: ExternalLink, label: "Documentation", sub: "Opens in new tab", target: "_blank" },
             ].map(item => (
               <Link key={item.href} href={item.href} target={(item as any).target} onClick={() => setProfileOpen(false)}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl hover:bg-gray-50 dark:hover:bg-slate-800 transition-colors">

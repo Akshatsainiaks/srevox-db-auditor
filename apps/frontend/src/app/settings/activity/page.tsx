@@ -39,6 +39,57 @@ interface Group {
 
 const formatAction = (action: string) => {
   switch (action) {
+    
+    case "connector_created":
+    case "add_connector":
+    case "connect_database":
+      return { label: "Database Connector Created", color: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100/50" };
+    case "connector_updated":
+    case "update_connector":
+      return { label: "Connector Config Updated", color: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-100/50" };
+    case "connector_deleted":
+    case "delete_connector":
+      return { label: "Connector Removed", color: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400 border border-red-100/50" };
+    case "retention_updated":
+    case "update_retention_policy":
+      return { label: "Retention Policy Updated", color: "bg-indigo-50 text-indigo-700 dark:bg-indigo-500/10 dark:text-indigo-400 border border-indigo-100/50" };
+    case "retention_purged":
+    case "purge_retention_records":
+      return { label: "Audit Records Purged", color: "bg-rose-50 text-rose-700 dark:bg-rose-500/10 dark:text-rose-400 border border-rose-100/50" };
+    case "channel_created":
+    case "add_channel":
+      return { label: "Alert Channel Created", color: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100/50" };
+    case "channel_updated":
+    case "update_channel":
+      return { label: "Alert Channel Updated", color: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-100/50" };
+    case "channel_deleted":
+    case "delete_channel":
+      return { label: "Alert Channel Deleted", color: "bg-red-50 text-red-700 dark:bg-red-500/10 dark:text-red-400 border border-red-100/50" };
+    case "channel_tested":
+    case "test_channel":
+      return { label: "Alert Channel Tested", color: "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 border border-blue-100/50" };
+    case "user_login":
+    case "login":
+      return { label: "User Logged In", color: "bg-blue-50 text-blue-700 dark:bg-blue-500/10 dark:text-blue-400 border border-blue-100/50" };
+    case "user_logout":
+    case "logout":
+      return { label: "User Logged Out", color: "bg-gray-50 text-gray-700 dark:bg-slate-800 dark:text-slate-300 border border-gray-200" };
+    case "update_profile":
+    case "profile_updated":
+      return { label: "Profile Updated", color: "bg-violet-50 text-violet-700 dark:bg-violet-500/10 dark:text-violet-400 border border-violet-100/50" };
+    case "password_changed":
+    case "change_password":
+      return { label: "Password Updated", color: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-100/50" };
+    case "invite_member":
+    case "member_invited":
+      return { label: "Member Invited", color: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100/50" };
+    case "group_created":
+      return { label: "User Group Created", color: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100/50" };
+    case "page_view":
+    case "view_data_audit_ledger":
+      return { label: "Viewed CDC Audit Ledger", color: "bg-gray-50 text-gray-700 dark:bg-slate-800 dark:text-slate-300 border border-gray-200" };
+    case "view_notifications":
+      return { label: "Viewed Notifications", color: "bg-gray-50 text-gray-700 dark:bg-slate-800 dark:text-slate-300 border border-gray-200" };
     case "service_created": return { label: "Service Registered", color: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100/50" };
     case "service_updated": return { label: "Service Config Updated", color: "bg-amber-50 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400 border border-amber-100/50" };
     case "resource_alert_created": return { label: "Resource Alert Created", color: "bg-emerald-50 text-emerald-700 dark:bg-emerald-500/10 dark:text-emerald-400 border border-emerald-100/50" };
@@ -65,11 +116,8 @@ const resolveUserDisplay = (
   val: any,
   usersList: User[] = [],
   groupsList: Group[] = [],
-  resourceAlertsList: any[] = [],
-  clustersList: any[] = [],
-  servicesList: any[] = [],
   channelsList: any[] = [],
-  rulesList: any[] = []
+  connectorsList: any[] = []
 ): string => {
   if (typeof val !== "string") return JSON.stringify(val);
   if (val.startsWith("usr")) {
@@ -80,29 +128,17 @@ const resolveUserDisplay = (
     const matched = groupsList.find(g => g.group_id === val);
     return matched ? `Group: ${matched.name}` : val;
   }
-  if (val.startsWith("srv")) {
-    const matched = servicesList.find(s => s.service_owner_id === val);
-    return matched ? `Service: ${matched.name}` : val;
+  if (val.startsWith("conn") || val.startsWith("con_")) {
+    const matched = connectorsList.find(c => c.connector_id === val || c.id === val);
+    return matched ? `Connector: ${matched.name}` : `Connector: ${val}`;
   }
   if (val.startsWith("cha")) {
     const matched = channelsList.find(c => c.channel_id === val);
     return matched ? `Channel: ${matched.name}` : val;
   }
-  if (val.startsWith("ral")) {
-    const matched = resourceAlertsList.find(r => r.resource_alert_id === val);
-    return matched ? `Threshold Rule: ${matched.resource_type.toUpperCase()} > ${matched.threshold_pct}%` : val;
-  }
-  if (val.startsWith("cls")) {
-    const matched = clustersList.find(c => c.cluster_id === val);
-    return matched ? `Cluster: ${matched.name}` : val;
-  }
-  if (val.startsWith("rul")) {
-    const matched = rulesList.find(r => r.rule_id === val);
-    return matched ? `Alert Rule: ${matched.name}` : val;
-  }
   if (val.includes(",")) {
     const ids = val.split(",").map(s => s.trim());
-    const mapped = ids.map(id => resolveUserDisplay(id, usersList, groupsList, resourceAlertsList, clustersList, servicesList, channelsList, rulesList));
+    const mapped = ids.map(id => resolveUserDisplay(id, usersList, groupsList, channelsList, connectorsList));
     return mapped.join(", ");
   }
   return val;
@@ -112,11 +148,8 @@ const formatMetadata = (
   act: ActivityLog,
   usersList: User[] = [],
   groupsList: Group[] = [],
-  resourceAlertsList: any[] = [],
-  clustersList: any[] = [],
-  servicesList: any[] = [],
   channelsList: any[] = [],
-  rulesList: any[] = []
+  connectorsList: any[] = []
 ) => {
   let meta = act.metadata;
   if (typeof meta === "string") {
@@ -131,7 +164,7 @@ const formatMetadata = (
   }
 
   const getUserDisplay = (val: any): string =>
-    resolveUserDisplay(val, usersList, groupsList, resourceAlertsList, clustersList, servicesList, channelsList, rulesList);
+    resolveUserDisplay(val, usersList, groupsList, channelsList, connectorsList);
 
   const getDisplayValue = (val: any): string => {
     if (val === undefined || val === null) return "none";
@@ -362,22 +395,16 @@ export default function AuditLogsPage() {
   // Active Detail Drawer State
   const [activeDetail, setActiveDetail] = useState<ActivityLog | null>(null);
 
-  const [resourceAlertsList, setResourceAlertsList] = useState<any[]>([]);
-  const [clustersList, setClustersList] = useState<any[]>([]);
-  const [servicesList, setServicesList] = useState<any[]>([]);
   const [channelsList, setChannelsList] = useState<any[]>([]);
-  const [rulesList, setRulesList] = useState<any[]>([]);
+  const [connectorsList, setConnectorsList] = useState<any[]>([]);
 
   // Fetch users & metadata entities for resolution
   useEffect(() => {
     if (!canView) return;
-    api.get("/api/users").then(res => setUsers(res.data.users || [])).catch(console.error);
-    api.get("/api/groups").then(res => setGroups(res.data.groups || [])).catch(console.error);
-    api.get("/api/resource-alerts").then(res => setResourceAlertsList(res.data.alerts || [])).catch(console.error);
-    api.get("/api/clusters").then(res => setClustersList(res.data.clusters || [])).catch(console.error);
-    api.get("/api/service-owners").then(res => setServicesList(res.data.service_owners || [])).catch(console.error);
-    api.get("/api/channels").then(res => setChannelsList(res.data.channels || [])).catch(console.error);
-    api.get("/api/alert-rules").then(res => setRulesList(res.data.rules || [])).catch(console.error);
+    api.get("/api/users").then(res => setUsers(res.data.users || [])).catch(() => {});
+    api.get("/api/groups").then(res => setGroups(res.data.groups || [])).catch(() => {});
+    api.get("/api/channels").then(res => setChannelsList(res.data.channels || [])).catch(() => {});
+    api.get("/api/db-audit/connectors").then(res => setConnectorsList(res.data.connectors || [])).catch(() => {});
   }, [canView]);
 
   // Page View Auditing
@@ -844,13 +871,13 @@ export default function AuditLogsPage() {
                         </span>
                         {act.resource_id && (
                           <span className="text-[10px] font-semibold text-gray-400 dark:text-slate-400 truncate max-w-[200px]" title={act.resource_id}>
-                            {resolveUserDisplay(act.resource_id, users, groups, resourceAlertsList, clustersList, servicesList, channelsList, rulesList)}
+                            {resolveUserDisplay(act.resource_id, users, groups, channelsList, connectorsList)}
                           </span>
                         )}
                       </div>
                     </td>
                     <td className="px-5 py-3.5 max-w-sm">
-                      {formatMetadata(act, users, groups, resourceAlertsList, clustersList, servicesList, channelsList, rulesList)}
+                      {formatMetadata(act, users, groups, channelsList, connectorsList)}
                     </td>
                   </tr>
                 ))}
@@ -1062,7 +1089,7 @@ export default function AuditLogsPage() {
                   <div>
                     <span className="text-[10px] text-gray-400 dark:text-slate-500 block">Resource Name</span>
                     <span className="text-xs font-semibold text-gray-800 dark:text-slate-200 block break-words">
-                      {activeDetail.resource_id ? resolveUserDisplay(activeDetail.resource_id, users, groups, resourceAlertsList, clustersList, servicesList, channelsList, rulesList) : "none"}
+                      {activeDetail.resource_id ? resolveUserDisplay(activeDetail.resource_id, users, groups, channelsList, connectorsList) : "none"}
                     </span>
                   </div>
                 </div>
@@ -1074,7 +1101,7 @@ export default function AuditLogsPage() {
                   Changes & Context Details
                 </h4>
                 <div className="border border-gray-100 dark:border-slate-800/80 rounded-2xl p-4">
-                  {formatMetadata(activeDetail, users, groups, resourceAlertsList, clustersList, servicesList, channelsList, rulesList)}
+                  {formatMetadata(activeDetail, users, groups, channelsList, connectorsList)}
                 </div>
               </div>
 

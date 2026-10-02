@@ -192,9 +192,22 @@ export const fetchIncidentsRetentionPolicy = () => api.get("/api/retention/incid
 export const saveIncidentsRetentionPolicy = (data: { incident_days: number; purge_interval_hours: number }) =>
   api.put("/api/retention/incidents", data).then(r => r.data);
 
+export const fetchDbAuditRetention = () => api.get("/api/retention/db-audit").then(r => r.data);
+export const saveDbAuditRetention = (data: { db_audit_days: number; purge_interval_hours: number }) =>
+  api.put("/api/retention/db-audit", data).then(r => r.data);
+export const purgeDbAuditNow = () => api.post("/api/retention/db-audit/purge-now").then(r => r.data);
+
 // ── DB Audit Platform ────────────────────────────────────────────────────────
 export const fetchDbAuditConnectors = () => api.get("/api/db-audit/connectors").then(r => r.data);
-export const fetchDbAuditEvents     = () => api.get("/api/db-audit/events").then(r => r.data);
+export const fetchDbAuditConnector  = (id: string) => api.get(`/api/db-audit/connectors/${id}`).then(r => r.data);
+export const updateDbAuditConnector = (id: string, data: object) => api.patch(`/api/db-audit/connectors/${id}`, data).then(r => r.data);
+export const fetchDbAuditEvents     = (params?: any) => api.get("/api/db-audit/events", { params }).then(r => r.data);
+export const fetchMutationVelocity   = () => api.get("/api/db-audit/analytics/velocity").then(r => r.data);
+export const fetchDbAuditSchema     = () => api.get("/api/db-audit/schema").then(r => r.data);
 export const createDbAuditConnector = (data: object) => api.post("/api/db-audit/connectors", data).then(r => r.data);
 export const testDbAuditConnector   = (data: object) => api.post("/api/db-audit/connectors/test", data).then(r => r.data);
+export const deleteDbAuditConnector = (id: string) => api.delete(`/api/db-audit/connectors/${id}`).then(r => r.data);
 export const publishDbAuditEvent   = (data: object) => api.post("/api/db-audit/events", data).then(r => r.data);
+export const deleteDbAuditEvent = (id: string) => api.delete("/api/db-audit/events/" + id).then(r => r.data);
+export const bulkDeleteDbAuditEvents = (ids: string[]) => api.post("/api/db-audit/events/bulk-delete", { ids }).then(r => r.data);
+export const clearDbAuditEvents = (database?: string, connector_id?: string) => api.delete("/api/db-audit/events", { params: { database, connector_id } }).then(r => r.data);

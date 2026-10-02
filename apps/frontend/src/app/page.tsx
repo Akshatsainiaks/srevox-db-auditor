@@ -1,11 +1,10 @@
 "use client";
 import { useLayoutEffect } from "react";
 import Link from "next/link";
-import { ArrowRight, Zap, Shield, Sparkles, Server } from "lucide-react";
+import { ArrowRight, Zap, Shield, Database, Activity } from "lucide-react";
 import { SrevoxLogo } from "@/components/Logo";
 
 export default function IndexPage() {
-  // Always force light mode on the welcome/landing page
   useLayoutEffect(() => {
     document.documentElement.classList.remove("dark");
     document.documentElement.style.backgroundColor = "#f8fafc";
@@ -18,8 +17,14 @@ export default function IndexPage() {
         <div className="flex items-center gap-3">
           <SrevoxLogo size={40} />
           <div className="flex flex-col">
-            <span className="font-bold text-gray-900 text-xl tracking-tight leading-none">Srevox</span>
-            <span className="text-[9px] text-indigo-600 mt-1 uppercase font-bold tracking-widest">Self-Hosted</span>
+            <div className="flex items-center gap-2 select-none">
+              <span className="font-black text-gray-900 text-xl tracking-tight leading-none">Srevox</span>
+              <span className="text-gray-300 font-light text-xl select-none">|</span>
+              <span className="font-black text-gray-900 text-xl tracking-tight uppercase leading-none">
+                DB AUDITOR
+              </span>
+            </div>
+            <span className="text-[9px] text-gray-400 mt-1 uppercase font-bold tracking-widest">Change Intelligence</span>
           </div>
         </div>
         <Link 
@@ -35,17 +40,17 @@ export default function IndexPage() {
         {/* Badge */}
         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-indigo-50 border border-indigo-100 text-indigo-600 text-xs font-bold mb-6">
           <Zap className="w-3.5 h-3.5 fill-indigo-100" />
-          <span>Kubernetes Crash Alerting</span>
+          <span>Real-Time Database Change Intelligence</span>
         </div>
 
         {/* Headline */}
-        <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-gray-900 leading-tight max-w-2xl">
-          Catch crashes before your users do.
+        <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight text-gray-900 leading-tight max-w-3xl">
+          Audit every row mutation across your databases.
         </h1>
 
         {/* Description */}
-        <p className="mt-6 text-base md:text-lg text-gray-500 max-w-xl leading-relaxed">
-          A simple, self-hosted alerting engine that monitors Kubernetes clusters, captures container crashes, and provides fast troubleshooting advice.
+        <p className="mt-6 text-base md:text-lg text-gray-500 max-w-2xl leading-relaxed">
+          Zero-overhead CDC event streaming, automatic PII masking, interactive before/after diff inspection, and immutable audit logging.
         </p>
 
         {/* Action Button */}
@@ -63,21 +68,21 @@ export default function IndexPage() {
         <div className="mt-20 grid grid-cols-1 md:grid-cols-3 gap-6 w-full text-left">
           <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-sm space-y-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-              <Server className="w-5 h-5" />
+              <Activity className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-gray-900 text-sm">Real-time Monitoring</h3>
+            <h3 className="font-bold text-gray-900 text-sm">CDC Event Streaming</h3>
             <p className="text-gray-500 text-xs leading-relaxed">
-              Detects container failures and crashes instantly from your cluster API socket with zero delay.
+              Log-based change data capture for PostgreSQL WAL and multi-database change events with zero query overhead.
             </p>
           </div>
 
           <div className="bg-white p-6 rounded-2xl border border-gray-200/80 shadow-sm space-y-3">
             <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
-              <Sparkles className="w-5 h-5" />
+              <Database className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-gray-900 text-sm">AI Troubleshooting</h3>
+            <h3 className="font-bold text-gray-900 text-sm">Row & Column Diff Inspector</h3>
             <p className="text-gray-500 text-xs leading-relaxed">
-              Finds root causes and suggests quick fixes using your preferred AI models like OpenAI or local Ollama.
+              Compare exact before-and-after table row states side-by-side with automated field diff highlighting.
             </p>
           </div>
 
@@ -85,9 +90,9 @@ export default function IndexPage() {
             <div className="w-10 h-10 rounded-xl bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600">
               <Shield className="w-5 h-5" />
             </div>
-            <h3 className="font-bold text-gray-900 text-sm">100% Private</h3>
+            <h3 className="font-bold text-gray-900 text-sm">PII Hashing & Masking</h3>
             <p className="text-gray-500 text-xs leading-relaxed">
-              Runs completely inside your own local network. Your cluster logs and data never leave your server.
+              In-memory pre-persistence masking for passwords, SSNs, credit cards, and API tokens before log storage.
             </p>
           </div>
         </div>
@@ -95,7 +100,7 @@ export default function IndexPage() {
 
       {/* Footer */}
       <footer className="max-w-6xl w-full mx-auto text-center py-6 border-t border-gray-200/60 text-[11px] text-gray-400 font-semibold select-none">
-       Self-Hosted Instance
+        Srevox DB Auditor — Standalone Platform
       </footer>
     </div>
   );

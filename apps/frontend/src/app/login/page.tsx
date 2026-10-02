@@ -5,7 +5,7 @@ import { useRouter } from "next/navigation";
 import { Eye, EyeOff, ArrowLeft } from "lucide-react";
 import { apiLogin } from "@/lib/api";
 import { setToken, setUser } from "@/lib/auth";
-import { SrevoxLogo } from "@/components/Logo";
+import { SrevoxLogo, SrevoxWordmark } from "@/components/Logo";
 import { applyDashboardTheme } from "@/components/ThemeProvider";
 
 export default function LoginPage() {
@@ -51,11 +51,17 @@ export default function LoginPage() {
     <div className="min-h-screen bg-gradient-to-br from-slate-50 via-white to-indigo-50/50 flex items-center justify-center p-4">
       <div className="w-full max-w-sm">
         <div className="text-center mb-8">
-          <Link href="/" className="inline-flex flex-col items-center gap-3">
-            <SrevoxLogo size={52} />
-            <div>
-              <div className="font-bold text-gray-900 text-2xl tracking-tight">Srevox</div>
-              <div className="text-sm text-gray-400 mt-0.5">Catch crashes before your users do.</div>
+          <Link href="/" className="inline-flex flex-col items-center gap-2">
+            <SrevoxLogo size={56} />
+            <div className="flex flex-col items-center mt-1">
+              <div className="flex items-center gap-2 select-none">
+                <span className="font-black text-gray-900 text-2xl tracking-tight">Srevox</span>
+                <span className="text-gray-300 dark:text-slate-600 font-light text-2xl select-none">|</span>
+                <span className="font-black text-gray-900 text-2xl tracking-tight uppercase">
+                  DB AUDITOR
+                </span>
+              </div>
+              <div className="text-xs text-gray-400 mt-1">Database Change Intelligence Platform</div>
             </div>
           </Link>
         </div>
