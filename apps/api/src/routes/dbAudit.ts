@@ -143,7 +143,7 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
       const targetDbs: string[] = [];
       const configuredDb = (conn.database_name || "").trim();
 
-      if (!configuredDb || configuredDb === "*") {
+      if (!configuredDb || configuredDb === "*" || configuredDb.toLowerCase() === "all" || configuredDb.toLowerCase() === "all_databases") {
         const [dbRows]: any = await connection.query("SHOW DATABASES");
         const systemDbs = new Set(["information_schema", "mysql", "performance_schema", "sys", "metrics_schema", "test"]);
         for (const row of dbRows) {

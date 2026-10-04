@@ -18,6 +18,7 @@ import {
   Eye,
   EyeOff,
   Lock,
+  Layers,
   ArrowRight,
   Sparkles,
 } from "lucide-react";
@@ -86,6 +87,7 @@ export default function ConnectorModal({ onClose, onConnectorCreated }: Connecto
   const [host, setHost] = useState("");
   const [port, setPort] = useState(5432);
   const [databaseName, setDatabaseName] = useState("*");
+  const [dbScopeMode, setDbScopeMode] = useState<"all" | "single">("all");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -443,37 +445,99 @@ export default function ConnectorModal({ onClose, onConnectorCreated }: Connecto
                     </div>
 
                     <div>
-                      <div className="flex items-center justify-between mb-1">
+                      <div className="flex items-center justify-between mb-2">
                         <label className="block font-bold text-gray-700 dark:text-slate-300 text-[11px]">
-                          Database Name
+                          Database Scope
                         </label>
-                        <div className="flex items-center gap-1.5">
-                          <button
-                            type="button"
-                            onClick={() => setDatabaseName("*")}
-                            className={cn(
-                              "text-[10.5px] font-bold px-2 py-0.5 rounded-md transition cursor-pointer flex items-center gap-1",
-                              databaseName === "*"
-                                ? "bg-indigo-600 text-white shadow-2xs"
-                                : "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20"
-                            )}
-                          >
-                            <span>* (Audit All Databases)</span>
-                          </button>
-                        </div>
+                        <span className="text-[10px] text-gray-400 dark:text-slate-500 font-mono">
+                          Target: {dbScopeMode === "all" || databaseName === "*" ? "* (All Databases)" : (databaseName || "specific")}
+                        </span>
                       </div>
-                      <input
-                        type="text"
-                        required
-                        placeholder="e.g. * (All DBs) or hoicko_app or production_db"
-                        value={databaseName}
-                        onChange={(e) => setDatabaseName(e.target.value)}
-                        className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-white font-mono text-xs"
-                      />
-                      {databaseName === "*" && (
-                        <p className="mt-1 text-[10.5px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1">
-                          <span>✨ Wildcard Active: Automatically audits all databases on this server (e.g. hoicko_app, aes, crm).</span>
-                        </p>
+
+                      {/* 2-Option Card Selector for Scope */}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 mb-2.5">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDbScopeMode("all");
+                            setDatabaseName("*");
+                          }}
+                          className={cn(
+                            "p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between",
+                            dbScopeMode === "all" || databaseName === "*"
+                              ? "border-indigo-600 dark:border-indigo-500 bg-indigo-50/70 dark:bg-indigo-500/15 ring-2 ring-indigo-500/30 text-indigo-950 dark:text-indigo-100 shadow-2xs"
+                              : "border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-300 hover:border-gray-300 dark:hover:border-slate-700"
+                          )}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="font-bold text-xs flex items-center gap-1.5">
+                              <Database className="w-3.5 h-3.5 text-indigo-500" />
+                              * Track All Databases
+                            </span>
+                            {(dbScopeMode === "all" || databaseName === "*") && (
+                              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-indigo-600 text-white">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-gray-500 dark:text-slate-400 mt-1 leading-snug">
+                            Auto-discovers and audits all non-system databases (e.g. production, analytics, crm)
+                          </p>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setDbScopeMode("single");
+                            if (databaseName === "*") setDatabaseName("");
+                          }}
+                          className={cn(
+                            "p-3 rounded-xl border text-left transition-all cursor-pointer flex flex-col justify-between",
+                            dbScopeMode === "single" && databaseName !== "*"
+                              ? "border-indigo-600 dark:border-indigo-500 bg-indigo-50/70 dark:bg-indigo-500/15 ring-2 ring-indigo-500/30 text-indigo-950 dark:text-indigo-100 shadow-2xs"
+                              : "border-gray-200 dark:border-slate-800 bg-white dark:bg-slate-900 text-gray-700 dark:text-slate-300 hover:border-gray-300 dark:hover:border-slate-700"
+                          )}
+                        >
+                          <div className="flex items-center justify-between w-full">
+                            <span className="font-bold text-xs flex items-center gap-1.5">
+                              <Layers className="w-3.5 h-3.5 text-indigo-500" />
+                              Single Database
+                            </span>
+                            {dbScopeMode === "single" && databaseName !== "*" && (
+                              <span className="text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full bg-indigo-600 text-white">
+                                Active
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-[10px] text-gray-500 dark:text-slate-400 mt-1 leading-snug">
+                            Specify only one exact database name on this host to track
+                          </p>
+                        </button>
+                      </div>
+
+                      {dbScopeMode === "single" && databaseName !== "*" ? (
+                        <div className="animate-fade-in mt-2">
+                          <label className="block font-bold text-gray-700 dark:text-slate-300 mb-1 text-[11px]">
+                            Specific Database Name
+                          </label>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. production_db or primary_db"
+                            value={databaseName}
+                            onChange={(e) => setDatabaseName(e.target.value)}
+                            className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-white font-mono text-xs"
+                          />
+                        </div>
+                      ) : (
+                        <div className="flex items-center justify-between p-2.5 rounded-xl bg-indigo-50/60 dark:bg-indigo-500/10 border border-indigo-200/60 dark:border-indigo-500/20 text-[11px] text-indigo-700 dark:text-indigo-300 font-medium">
+                          <div className="flex items-center gap-2">
+                            <span className="font-mono font-bold bg-white dark:bg-slate-800 px-2 py-0.5 rounded border border-indigo-200 dark:border-indigo-500/30 text-indigo-600 dark:text-indigo-400">
+                              *
+                            </span>
+                            <span>Wildcard mode active: All databases on this server will be captured & audited in real time.</span>
+                          </div>
+                        </div>
                       )}
                     </div>
 

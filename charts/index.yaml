@@ -2,13 +2,13 @@ apiVersion: v1
 entries:
   srevox-db-auditor:
   - apiVersion: v2
-    appVersion: 0.0.1
+    appVersion: 0.0.2
     created: "2026-09-14T15:00:00.000Z"
     description: Srevox DB Auditor - Enterprise Database Audit & Change Intelligence Platform
     digest: ""
     name: srevox-db-auditor
     type: application
     urls:
-    - srevox-db-auditor-0.0.1.tgz
-    version: 0.0.1
+    - srevox-db-auditor-0.0.2.tgz
+    version: 0.0.2
 generated: "2026-09-14T15:00:00.000Z"

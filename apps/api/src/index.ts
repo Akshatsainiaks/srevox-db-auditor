@@ -576,6 +576,50 @@ async function start() {
         console.warn("[migrations] column extension note:", err.message);
       }
 
+      
+      // 5. Initialize ClickHouse audit schema if ClickHouse is configured
+      try {
+        const chUrl = process.env.CLICKHOUSE_URL || "http://clickhouse:8123";
+        const chTableSql = `
+          CREATE TABLE IF NOT EXISTS audit_events (
+            tenant_id UUID,
+            project_id UUID,
+            connector_id UUID,
+            database String,
+            schema String,
+            table String,
+            operation Enum8('INSERT' = 1, 'UPDATE' = 2, 'DELETE' = 3, 'DDL' = 4),
+            primary_key String,
+            before String,
+            after String,
+            changed_fields Array(String),
+            masked_fields Array(String),
+            commit_timestamp DateTime64(3, 'UTC'),
+            ingest_timestamp DateTime64(3, 'UTC') DEFAULT now64(3),
+            transaction_id String,
+            db_user String,
+            application_name String,
+            client_ip String,
+            session_id String,
+            execution_metadata String,
+            record_hash String,
+            prev_hash String,
+            capture_mode Enum8('log_based' = 1, 'polling' = 2)
+          )
+          ENGINE = MergeTree()
+          PARTITION BY toYYYYMM(commit_timestamp)
+          PRIMARY KEY (tenant_id, database, schema, table)
+          ORDER BY (tenant_id, database, schema, table, commit_timestamp);
+        `;
+        await fetch(`${chUrl}/?query=${encodeURIComponent(chTableSql)}`, {
+          method: "POST"
+        }).then(r => {
+          if (r.ok) console.log("✅ ClickHouse audit_events table verified");
+        }).catch(() => {});
+      } catch (err: any) {
+        // Non-blocking: ClickHouse will initialize when reachable
+      }
+
       console.log("✅ DB Auditor migrations complete (20 active tables verified)");
     } catch (e: any) {
       console.error("Migration error:", e.message);

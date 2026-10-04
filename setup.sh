@@ -57,18 +57,12 @@ echo -e "${CYAN}→ Downloading deployment files...${RESET}"
 download "$BASE/docker-compose.yml" "docker-compose.yml"
 echo -e "${GREEN}✓ docker-compose.yml downloaded${RESET}"
 
-# Ensure ClickHouse init schema directory and file are downloaded
-mkdir -p infra/db-audit
-download "$BASE/infra/db-audit/02_clickhouse_schema.sql" "infra/db-audit/02_clickhouse_schema.sql"
-echo -e "${GREEN}✓ infra/db-audit/02_clickhouse_schema.sql downloaded${RESET}"
-
 # ── Create .env if not exists ─────────────────────────────────
 if [ ! -f .env ]; then
   download "$BASE/.env.example" ".env"
   echo -e "${GREEN}✓ .env created from template${RESET}"
   echo ""
   echo -e "${YELLOW}${BOLD}⚠️  Review .env before starting (optional for custom ports):${RESET}"
-  echo -e "${YELLOW}   SREVOX_VERSION=v0.0.1${RESET}"
   echo -e "${YELLOW}   POSTGRES_PASSWORD=srevoxdbauditor${RESET}"
   echo -e "${YELLOW}   BACKEND_SECRET_KEY=any_32_char_string_here_xxxx${RESET}"
   echo -e "${YELLOW}   ENCRYPTION_KEY=exactly_32_chars_here__________${RESET}"

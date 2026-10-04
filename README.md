@@ -2,7 +2,7 @@
 
 <br/>
 
-<img src="https://raw.githubusercontent.com/Akshatsainiaks/srevox-website/main/public/favicon.svg" width="96" height="96" alt="Srevox Logo"/>
+<img src="https://raw.githubusercontent.com/Akshatsainiaks/srevox-db-auditor/main/public/logo.svg" width="96" height="96" alt="Srevox Logo"/>
 
 <br/>
 
@@ -182,7 +182,7 @@ docker compose up -d
 | ⚙️ **Audit Control** | `7003` | `http://YOUR_SERVER_IP:7003` | Internal Engine |
 | ⚡ **Audit Processor** | `7004` | `http://YOUR_SERVER_IP:7004` | Rust CDC Streamer |
 | 🐘 **Internal PostgreSQL**| `7432` | `YOUR_SERVER_IP:7432` | Config & Metadata |
-| ⚡ **ClickHouse Ledger** | `7123` | `http://YOUR_SERVER_IP:7123` | Audit Log Storage |
+| ⚡ **ClickHouse Ledger** | `8123` | `http://YOUR_SERVER_IP:8123` | Audit Log Storage |
 
 > ⚠️ **Change the default admin password immediately upon first login via Settings → Security.**
 
@@ -294,9 +294,51 @@ impacted?}
 
 ## 🔌 Connect Your Database
 
-Connecting an external database takes less than 2 minutes.
+Connecting any target database takes less than 1 minute. Srevox DB Auditor supports both single-database targeting and **Wildcard `*` mode** to monitor every database on a server cluster simultaneously.
 
-### 1. PostgreSQL (WAL / Logical Replication)
+### 🌟 Monitored Databases & Compatibility Matrix
+
+| Database Engine | Supported Versions | Tracking Method | Multi-DB Wildcard `*` |
+|---|---|---|:---:|
+| 🐬 **TiDB** | v5.0 - v8.x+ | Native Wire Protocol & CDC Diffing | ✅ Supported |
+| 🐬 **MySQL** | 5.7, 8.0, 8.4+ | Binlog & Continuous Mutation Scan | ✅ Supported |
+| 🦭 **MariaDB** | 10.3 - 11.x+ | Native Wire CDC Streamer | ✅ Supported |
+| 🐘 **PostgreSQL** | 12, 13, 14, 15, 16+ | WAL Logical Replication / Snapshot | ✅ Supported |
+| 🪳 **CockroachDB** | v21+ | PostgreSQL Wire Protocol | ✅ Supported |
+| ⚡ **Supabase / Neon** | All versions | Direct Postgres Replication Stream | ✅ Supported |
+| ☁️ **AWS RDS / Aurora** | MySQL & Postgres | Cloud Managed Endpoint Connection | ✅ Supported |
+| ☁️ **GCP Cloud SQL** | MySQL & Postgres | Private VPC / Public IP Stream | ✅ Supported |
+
+---
+
+### ✨ Wildcard `*` (Audit All Databases) Feature
+
+When configuring a new database connection:
+* Select **`* Track All Databases`** (Active by default).
+* Srevox DB Auditor automatically introspects the server, excludes internal system schemas (`information_schema`, `mysql`, `sys`, `performance_schema`, `metrics_schema`), and continuously monitors **every single user database** (e.g. `crm`, `analytics`, `billing`, `inventory`) in real time.
+* Alternatively, select **`Single Database`** if you only want to isolate audit logging to one specific database.
+
+---
+
+### 1. TiDB / MySQL / MariaDB Setup
+
+Connect directly with replication or read-only audit user privileges:
+
+```sql
+CREATE USER 'srevox_auditor'@'%' IDENTIFIED BY 'your_secure_password';
+GRANT SELECT, SHOW DATABASES, REPLICATION CLIENT, REPLICATION SLAVE ON *.* TO 'srevox_auditor'@'%';
+FLUSH PRIVILEGES;
+```
+
+In the Web Console (**Databases → Connect Database**):
+1. Select **TiDB** or **MySQL**.
+2. Enter Host & Port (e.g. `192.168.1.122:4000` for TiDB or `:3306` for MySQL).
+3. Keep **`* Track All Databases`** selected to audit every database, or specify a single database.
+4. Click **Test Handshake** and **Save Connector**. Changes made from DBeaver, application code, or CLI will immediately stream into the audit ledger.
+
+---
+
+### 2. PostgreSQL (WAL / Logical Replication)
 
 Ensure logical decoding is enabled in `postgresql.conf`:
 
@@ -468,7 +510,7 @@ curl -f http://localhost:7001/api/health
 
 **Verify ClickHouse Ledger Connectivity:**
 ```bash
-curl -f http://localhost:7123/ping
+curl -f http://localhost:8123/ping
 # Expected: Ok.
 ```
 

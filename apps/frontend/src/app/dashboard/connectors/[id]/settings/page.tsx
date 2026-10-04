@@ -668,7 +668,7 @@ export default function DatabaseSettingsPage() {
               <input
                 type="text"
                 disabled={!isEditingConnection}
-                placeholder="e.g. * or hoicko_app"
+                placeholder="e.g. * or production_db"
                 className={`input mt-1.5 w-full border-gray-300 dark:border-slate-800 rounded-xl px-3 py-2 text-xs font-mono ${
                   isEditingConnection ? "bg-white dark:bg-slate-900 border-indigo-500/50" : "bg-slate-50 dark:bg-slate-900/50 cursor-not-allowed opacity-80"
                 }`}
