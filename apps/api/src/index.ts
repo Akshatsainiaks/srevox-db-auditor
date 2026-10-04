@@ -25,6 +25,7 @@ import { PERMISSION_IDS } from "./middleware/rbac.js";
 import { requestContainer } from "./services/activity.js";
 
 const app = Fastify({
+  pluginTimeout: 30000,
   trustProxy: true,
   logger: {
     level: "info",
@@ -545,6 +546,35 @@ async function start() {
       await sql`CREATE INDEX IF NOT EXISTS idx_db_audit_events_connector ON db_audit_events(connector_id, created_at DESC)`;
       await sql`CREATE INDEX IF NOT EXISTS idx_db_audit_events_table ON db_audit_events(table_name, created_at DESC)`;
       await sql`CREATE INDEX IF NOT EXISTS idx_db_audit_events_created ON db_audit_events(created_at DESC)`;
+
+      // Ensure all extended columns exist on DB Auditor tables
+      try {
+        await sql`ALTER TABLE db_audit_connectors ADD COLUMN IF NOT EXISTS connector_id TEXT`;
+        await sql`ALTER TABLE db_audit_connectors ADD COLUMN IF NOT EXISTS capture_mode TEXT DEFAULT 'log_based'`;
+        await sql`ALTER TABLE db_audit_connectors ADD COLUMN IF NOT EXISTS audit_scope TEXT DEFAULT 'all'`;
+        await sql`ALTER TABLE db_audit_connectors ADD COLUMN IF NOT EXISTS target_tables TEXT`;
+        await sql`ALTER TABLE db_audit_connectors ADD COLUMN IF NOT EXISTS enable_pii_masking BOOLEAN DEFAULT true`;
+        await sql`ALTER TABLE db_audit_connectors ADD COLUMN IF NOT EXISTS last_sync_at TIMESTAMPTZ DEFAULT now()`;
+
+        await sql`ALTER TABLE db_audit_events ADD COLUMN IF NOT EXISTS id TEXT`;
+        await sql`ALTER TABLE db_audit_events ADD COLUMN IF NOT EXISTS connector_id TEXT`;
+        await sql`ALTER TABLE db_audit_events ADD COLUMN IF NOT EXISTS actor TEXT DEFAULT 'srevox'`;
+        await sql`ALTER TABLE db_audit_events ADD COLUMN IF NOT EXISTS client_ip TEXT`;
+        await sql`ALTER TABLE db_audit_events ADD COLUMN IF NOT EXISTS column_types JSONB DEFAULT '{}'::jsonb`;
+        await sql`ALTER TABLE db_audit_events ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now()`;
+
+        // Purge any internal table records from audit events
+        await sql`
+          DELETE FROM db_audit_events 
+          WHERE table_name IN (
+            'users', 'organizations', 'groups', 'group_members', 'user_sessions', 
+            'schema_migrations', 'schema_version', 'channels', 'service_owners', 
+            'invitations', 'activity_log', 'service_owner_settings'
+          )
+        `;
+      } catch (err) {
+        console.warn("[migrations] column extension note:", err.message);
+      }
 
       console.log("✅ DB Auditor migrations complete (20 active tables verified)");
     } catch (e: any) {
