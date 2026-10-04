@@ -52,10 +52,20 @@ export default async function authRoutes(app: FastifyInstance) {
 
     const effectivePerms = mergePermissions(user.permissions, userGroups.map((g: any) => g.permissions));
 
-    const [org] = await sql`
-      SELECT org_id, name, slug, default_alert_source_channel_id, default_alert_cc, default_alert_bcc 
-      FROM organizations WHERE org_id = ${user.org_id}
-    `;
+    let org: any = null;
+    try {
+      const [o] = await sql`
+        SELECT org_id, name, slug, default_alert_source_channel_id, default_alert_cc, default_alert_bcc 
+        FROM organizations WHERE org_id = ${user.org_id}
+      `;
+      org = o;
+    } catch {
+      const [o] = await sql`
+        SELECT org_id, name, slug 
+        FROM organizations WHERE org_id = ${user.org_id}
+      `;
+      org = o;
+    }
 
     return {
       access_token: token,

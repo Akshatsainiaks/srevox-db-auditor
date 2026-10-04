@@ -15,6 +15,26 @@ echo -e "${CYAN}${BOLD}⚡ Srevox DB Auditor — Self-Hosted Setup${RESET}"
 echo -e "${CYAN}   Database Audit, DDL Tracking & CDC Change Intelligence${RESET}"
 echo ""
 
+# ── Download helper with retry and timeout logic ─────────────
+download() {
+  local url="$1"
+  local dest="$2"
+  local attempts=3
+  local count=0
+
+  while [ $count -lt $attempts ]; do
+    count=$((count + 1))
+    if curl -fsSL -m 20 --retry 2 --retry-delay 3 "$url" -o "$dest"; then
+      return 0
+    fi
+    echo -e "${YELLOW}⚠️  Download attempt $count failed for $url. Retrying...${RESET}"
+    sleep 2
+  done
+
+  echo -e "${RED}✗ Failed to download $url after $attempts attempts.${RESET}"
+  exit 1
+}
+
 # ── Check Docker ──────────────────────────────────────────────
 if ! command -v docker &> /dev/null; then
   echo -e "${RED}✗ Docker not found. Install: https://docs.docker.com/get-docker/${RESET}"
@@ -34,15 +54,21 @@ echo -e "${GREEN}✓ Created srevox-db-auditor/ directory${RESET}"
 # ── Download all required files ───────────────────────────────
 echo -e "${CYAN}→ Downloading deployment files...${RESET}"
 
-curl -fsSL "$BASE/docker-compose.yml" -o docker-compose.yml
+download "$BASE/docker-compose.yml" "docker-compose.yml"
 echo -e "${GREEN}✓ docker-compose.yml downloaded${RESET}"
+
+# Ensure ClickHouse init schema directory and file are downloaded
+mkdir -p infra/db-audit
+download "$BASE/infra/db-audit/02_clickhouse_schema.sql" "infra/db-audit/02_clickhouse_schema.sql"
+echo -e "${GREEN}✓ infra/db-audit/02_clickhouse_schema.sql downloaded${RESET}"
 
 # ── Create .env if not exists ─────────────────────────────────
 if [ ! -f .env ]; then
-  curl -fsSL "$BASE/.env.example" -o .env
+  download "$BASE/.env.example" ".env"
   echo -e "${GREEN}✓ .env created from template${RESET}"
   echo ""
   echo -e "${YELLOW}${BOLD}⚠️  Review .env before starting (optional for custom ports):${RESET}"
+  echo -e "${YELLOW}   SREVOX_VERSION=v0.0.1${RESET}"
   echo -e "${YELLOW}   POSTGRES_PASSWORD=srevoxdbauditor${RESET}"
   echo -e "${YELLOW}   BACKEND_SECRET_KEY=any_32_char_string_here_xxxx${RESET}"
   echo -e "${YELLOW}   ENCRYPTION_KEY=exactly_32_chars_here__________${RESET}"

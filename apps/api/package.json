@@ -20,6 +20,7 @@
     "dotenv": "^16.4.7",
     "fastify": "^4.28.1",
     "ioredis": "^5.4.1",
+    "mysql2": "^3.24.5",
     "nodemailer": "^8.0.7",
     "postgres": "^3.4.4",
     "uuid": "^10.0.0",

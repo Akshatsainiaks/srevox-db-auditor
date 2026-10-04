@@ -365,7 +365,7 @@ export default function ConnectorDetailPage({ params }: ConnectorDetailProps) {
 
     const evDb = (ev.database || "").toLowerCase();
     const evTime = ev.commit_timestamp ? new Date(ev.commit_timestamp).getTime() : Date.now();
-    const matchesDb = currentDbName && (evDb === currentDbName || evDb.includes(currentDbName) || currentDbName.includes(evDb));
+    const matchesDb = (currentDbName === "*" || !currentDbName) ? true : (evDb === currentDbName || evDb.includes(currentDbName) || currentDbName.includes(evDb));
 
     if (matchesDb && (!connectorCreatedAt || evTime >= connectorCreatedAt - 60000)) {
       return true;
@@ -514,7 +514,7 @@ export default function ConnectorDetailPage({ params }: ConnectorDetailProps) {
             </span>
           </div>
           <div className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white mb-1">
-            {filteredEvents.length > 0 ? (filteredEvents.length * 14 + 18).toLocaleString() : "2,410"}
+            {filteredEvents.length.toLocaleString()}
           </div>
           <div className="text-xs font-semibold text-gray-500 dark:text-slate-400">Mutations Today</div>
           <div className="mt-1 text-[11px] text-gray-400 dark:text-slate-500">
@@ -546,7 +546,7 @@ export default function ConnectorDetailPage({ params }: ConnectorDetailProps) {
             </span>
           </div>
           <div className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white mb-1">
-            {availableTables.length > 0 ? `${availableTables.length} Tables` : "18 Tables"}
+            {availableTables.length > 0 ? `${availableTables.length} Tables` : "0 Tables"}
           </div>
           <div className="text-xs font-semibold text-gray-500 dark:text-slate-400">Monitored Tables</div>
           <div className="mt-1 text-[11px] text-gray-400 dark:text-slate-500">

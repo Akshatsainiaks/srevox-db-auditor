@@ -204,6 +204,9 @@ async function start() {
         )
       `;
       await sql`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS security_password TEXT DEFAULT 'admin123'`;
+      await sql`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS default_alert_source_channel_id TEXT`;
+      await sql`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS default_alert_cc TEXT`;
+      await sql`ALTER TABLE organizations ADD COLUMN IF NOT EXISTS default_alert_bcc TEXT`;
       await sql`
         INSERT INTO organizations (org_id, name, slug)
         VALUES ('orgjncj44t4hb4', 'Srevox DB Auditor Organization', 'srevox-db-auditor')

@@ -85,7 +85,7 @@ export default function ConnectorModal({ onClose, onConnectorCreated }: Connecto
   const [captureMode, setCaptureMode] = useState<"all_queries" | "manual_only">("all_queries");
   const [host, setHost] = useState("");
   const [port, setPort] = useState(5432);
-  const [databaseName, setDatabaseName] = useState("");
+  const [databaseName, setDatabaseName] = useState("*");
   const [username, setUsername] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -443,17 +443,38 @@ export default function ConnectorModal({ onClose, onConnectorCreated }: Connecto
                     </div>
 
                     <div>
-                      <label className="block font-bold text-gray-700 dark:text-slate-300 mb-1 text-[11px]">
-                        Database Name
-                      </label>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block font-bold text-gray-700 dark:text-slate-300 text-[11px]">
+                          Database Name
+                        </label>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            onClick={() => setDatabaseName("*")}
+                            className={cn(
+                              "text-[10.5px] font-bold px-2 py-0.5 rounded-md transition cursor-pointer flex items-center gap-1",
+                              databaseName === "*"
+                                ? "bg-indigo-600 text-white shadow-2xs"
+                                : "bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 hover:bg-indigo-100 dark:hover:bg-indigo-500/20"
+                            )}
+                          >
+                            <span>* (Audit All Databases)</span>
+                          </button>
+                        </div>
+                      </div>
                       <input
                         type="text"
                         required
-                        placeholder="e.g. production_db or srevoxdbauditor"
+                        placeholder="e.g. * (All DBs) or hoicko_app or production_db"
                         value={databaseName}
                         onChange={(e) => setDatabaseName(e.target.value)}
                         className="w-full px-3.5 py-2.5 bg-white dark:bg-slate-900 border border-gray-200 dark:border-slate-800 rounded-xl focus:outline-hidden focus:ring-2 focus:ring-indigo-500 text-gray-900 dark:text-white font-mono text-xs"
                       />
+                      {databaseName === "*" && (
+                        <p className="mt-1 text-[10.5px] text-indigo-600 dark:text-indigo-400 font-medium flex items-center gap-1">
+                          <span>✨ Wildcard Active: Automatically audits all databases on this server (e.g. hoicko_app, aes, crm).</span>
+                        </p>
+                      )}
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">

@@ -1,9 +1,17 @@
 import { FastifyInstance } from "fastify";
 import net from "net";
+import mysql from "mysql2/promise";
 import { genId } from "../utils/id.js";
 import sql from "../db/sql.js";
 
 const SREVOX_INTERNAL_TABLES = new Set([
+  "users",
+  "organizations",
+  "groups",
+  "group_members",
+  "user_sessions",
+  "schema_migrations",
+  "schema_version",
   "db_audit_events",
   "db_audit_connectors",
   "receipts",
@@ -153,10 +161,17 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
       )
     `;
     await sql`ALTER TABLE db_audit_events ADD COLUMN IF NOT EXISTS id TEXT`;
+    await sql`ALTER TABLE db_audit_events ADD COLUMN IF NOT EXISTS connector_id TEXT`;
     await sql`ALTER TABLE db_audit_events ADD COLUMN IF NOT EXISTS actor TEXT DEFAULT 'srevox'`;
     await sql`ALTER TABLE db_audit_events ADD COLUMN IF NOT EXISTS client_ip TEXT`;
     await sql`ALTER TABLE db_audit_events ADD COLUMN IF NOT EXISTS column_types JSONB DEFAULT '{}'::jsonb`;
     await sql`ALTER TABLE db_audit_events ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT now()`;
+
+    // Purge any previously captured internal events so they never clutter the user dashboard
+    await sql`
+      DELETE FROM db_audit_events 
+      WHERE table_name = ANY(${Array.from(SREVOX_INTERNAL_TABLES)})
+    `.catch(() => {});
   } catch (err: any) {
     console.warn("[db-audit] migration warning:", err.message);
   }
@@ -176,368 +191,350 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
   const tableSchemaSnapshots = new Map<string, { columns: string[]; types: Record<string, string>; pks: string[] }>();
   const rowSnapshots = new Map<string, Map<string, Record<string, any>>>();
 
-  // Helper: Introspect all tables & columns dynamically from target database
-  const getDatabaseSchema = async () => {
+  // ── TIDB / MYSQL / MARIADB EXTERNAL SCANNER ─────────────────────────────────
+  const scanMysqlConnector = async (conn: any) => {
+    let connection: any = null;
     try {
-      const columns = await sql`
-        SELECT 
-          c.table_name,
-          c.column_name,
-          c.data_type,
-          c.udt_name,
-          c.is_nullable,
-          c.column_default,
-          c.ordinal_position
-        FROM information_schema.columns c
-        WHERE c.table_schema = 'public'
-        ORDER BY c.table_name, c.ordinal_position
-      `;
+      connection = await mysql.createConnection({
+        host: conn.host,
+        port: Number(conn.port) || 3306,
+        user: conn.username || "root",
+        password: conn.password || "",
+        connectTimeout: 5000,
+        dateStrings: true
+      });
 
-      const pks = await sql`
-        SELECT 
-          kcu.table_name,
-          kcu.column_name
-        FROM information_schema.table_constraints tc
-        JOIN information_schema.key_column_usage kcu 
-          ON tc.constraint_name = kcu.constraint_name 
-          AND tc.table_schema = kcu.table_schema
-        WHERE tc.constraint_type = 'PRIMARY KEY' AND tc.table_schema = 'public'
-      `;
+      // Update status to connected
+      await sql`
+        UPDATE db_audit_connectors 
+        SET status = 'connected', last_sync_at = NOW() 
+        WHERE id = ${conn.id} OR connector_id = ${conn.connector_id}
+      `.catch(() => {});
 
-      const pkMap = new Map<string, string[]>();
-      for (const pk of pks) {
-        if (!pkMap.has(pk.table_name)) pkMap.set(pk.table_name, []);
-        pkMap.get(pk.table_name)!.push(pk.column_name);
-      }
+      const targetDbs: string[] = [];
+      const configuredDb = (conn.database_name || "").trim();
 
-      const schemaMap: Record<string, { columns: any[]; primary_keys: string[] }> = {};
-      for (const col of columns) {
-        if (!schemaMap[col.table_name]) {
-          schemaMap[col.table_name] = {
-            columns: [],
-            primary_keys: pkMap.get(col.table_name) || []
-          };
+      if (!configuredDb || configuredDb === "*") {
+        const [dbRows]: any = await connection.query("SHOW DATABASES");
+        const systemDbs = new Set(["information_schema", "mysql", "performance_schema", "sys", "metrics_schema", "test"]);
+        for (const row of dbRows) {
+          const name = row.Database || row.database;
+          if (name && !systemDbs.has(name.toLowerCase())) {
+            targetDbs.push(name);
+          }
         }
-        schemaMap[col.table_name].columns.push({
-          column_name: col.column_name,
-          data_type: col.udt_name || col.data_type,
-          is_nullable: col.is_nullable === 'YES',
-          column_default: col.column_default,
-          is_primary_key: (pkMap.get(col.table_name) || []).includes(col.column_name)
-        });
+      } else {
+        targetDbs.push(configuredDb);
       }
 
-      return schemaMap;
-    } catch (err: any) {
-      console.warn("[db-audit] Schema introspection error:", err.message);
-      return {};
-    }
-  };
+      // User target tables filter if custom scope
+      const allowedTables = (conn.audit_scope === "custom" && conn.target_tables)
+        ? new Set(conn.target_tables.split(",").map((t: string) => t.trim().toLowerCase()).filter(Boolean))
+        : null;
 
-  // Helper: Query active actor and client IP from PostgreSQL pg_stat_activity
-  const getActiveActor = async (databaseName: string) => {
-    try {
-      const sessions = await sql`
-        SELECT usename, client_addr::text as client_ip, application_name
-        FROM pg_stat_activity
-        WHERE datname = ${databaseName}
-          AND pid <> pg_backend_pid()
-        ORDER BY query_start DESC NULLS LAST, state_change DESC
-        LIMIT 1
-      `;
-      if (sessions.length > 0 && sessions[0].usename) {
-        return {
-          actor: sessions[0].usename,
-          client_ip: sessions[0].client_ip || "127.0.0.1"
-        };
-      }
-    } catch {}
-    return {
-      actor: process.env.POSTGRES_USER || "srevox",
-      client_ip: "127.0.0.1"
-    };
-  };
-
-  // ── SCHEMA DRIFT & COLUMN MODIFICATION DETECTOR ──────────────────────────────
-  const checkSchemaDrift = async (currentSchema: Record<string, { columns: any[]; primary_keys: string[] }>) => {
-    const dbName = process.env.POSTGRES_DB || "srevoxdbauditor";
-
-    for (const [tableName, tableInfo] of Object.entries(currentSchema)) {
-      if (SREVOX_INTERNAL_TABLES.has(tableName)) continue;
-
-      const currentCols = tableInfo.columns.map(c => c.column_name);
-      const currentTypes: Record<string, string> = {};
-      tableInfo.columns.forEach(c => { currentTypes[c.column_name] = c.data_type; });
-
-      if (!tableSchemaSnapshots.has(tableName)) {
-        tableSchemaSnapshots.set(tableName, {
-          columns: currentCols,
-          types: currentTypes,
-          pks: tableInfo.primary_keys
-        });
-        continue;
-      }
-
-      const prevSchema = tableSchemaSnapshots.get(tableName)!;
-      const addedCols = currentCols.filter(c => !prevSchema.columns.includes(c));
-      const droppedCols = prevSchema.columns.filter(c => !currentCols.includes(c));
-      const typeChanges: { column: string; old_type: string; new_type: string }[] = [];
-
-      for (const col of currentCols) {
-        if (prevSchema.types[col] && prevSchema.types[col] !== currentTypes[col]) {
-          typeChanges.push({ column: col, old_type: prevSchema.types[col], new_type: currentTypes[col] });
-        }
-      }
-
-      if (addedCols.length > 0 || droppedCols.length > 0 || typeChanges.length > 0) {
-        const eventId = genId("evt");
-        const { actor, client_ip } = await getActiveActor(dbName);
-        const changedColsList = [...addedCols, ...droppedCols, ...typeChanges.map(t => t.column)];
-
-        const [newEvent] = await sql`
-          INSERT INTO db_audit_events (
-            id, event_id, database_name, schema_name, table_name, operation,
-            primary_key, column_types, actor, client_ip,
-            before_state, after_state, changed_fields, masked_fields,
-            record_hash, capture_mode, commit_timestamp
-          ) VALUES (
-            ${eventId}, ${eventId}, ${dbName}, 'public', ${tableName}, 'DDL_CHANGE',
-            ${sql.json({ table: tableName })},
-            ${sql.json(currentTypes)},
-            ${actor}, ${client_ip},
-            ${sql.json(safeSerialize(prevSchema))},
-            ${sql.json(safeSerialize({ columns: currentCols, types: currentTypes }))},
-            ${sql.json(changedColsList)},
-            ${sql.json([])},
-            ${genId("sha")}, 'schema_drift', now()
-          )
-          RETURNING *
-        `.catch(() => [null]);
-
-        if (newEvent) {
-          const formattedEvt = {
-            id: newEvent.event_id,
-            event_id: newEvent.event_id,
-            database: newEvent.database_name,
-            schema: newEvent.schema_name,
-            table: newEvent.table_name,
-            operation: 'DDL_CHANGE',
-            primary_key: newEvent.primary_key,
-            actor: newEvent.actor || actor,
-            client_ip: newEvent.client_ip || client_ip,
-            column_types: currentTypes,
-            before: newEvent.before_state,
-            after: newEvent.after_state,
-            changed_fields: changedColsList,
-            masked_fields: [],
-            commit_timestamp: newEvent.commit_timestamp,
-            capture_mode: 'schema_drift'
-          };
-          broadcastEvent(formattedEvt);
+      for (const db of targetDbs) {
+        let tables: string[] = [];
+        try {
+          const [tableRows]: any = await connection.query(`SHOW TABLES FROM \`${db}\``);
+          for (const r of tableRows) {
+            const tbl = Object.values(r)[0];
+            if (typeof tbl === "string" && !tbl.startsWith("_") && !SREVOX_INTERNAL_TABLES.has(tbl.toLowerCase())) {
+              if (!allowedTables || allowedTables.has(tbl.toLowerCase())) {
+                tables.push(tbl);
+              }
+            }
+          }
+        } catch {
+          continue;
         }
 
-        tableSchemaSnapshots.set(tableName, {
-          columns: currentCols,
-          types: currentTypes,
-          pks: tableInfo.primary_keys
-        });
-      }
-    }
-  };
+        const scanTables = tables.slice(0, 30);
 
-  // ── ROW-LEVEL DATA DIFF DETECTOR (DIRECT MANUAL SQL CHANGES) ────────────────
-  const scanTableDataChanges = async (tableName: string, pks: string[], columns: any[] = []) => {
-    try {
-      if (SREVOX_INTERNAL_TABLES.has(tableName)) return;
+        for (const tbl of scanTables) {
+          const snapshotKey = `mysql:${conn.connector_id || conn.id}:${db}:${tbl}`;
 
-      const dbName = process.env.POSTGRES_DB || "srevoxdbauditor";
-      const rows = await sql.unsafe(`SELECT * FROM ${tableName} LIMIT 100`);
-      const currentMap = new Map<string, Record<string, any>>();
+          // 1. Column / Schema Drift Check (DDL)
+          try {
+            const [colRows]: any = await connection.query(`SHOW FULL COLUMNS FROM \`${db}\`.\`${tbl}\``);
+            const currentCols: string[] = [];
+            const currentTypes: Record<string, string> = {};
+            let priKey = "id";
 
-      const pkCol = pks.length > 0 ? pks[0] : "id";
-      const colTypeMap: Record<string, string> = {};
-      for (const c of columns) {
-        colTypeMap[c.column_name] = c.data_type;
-      }
+            for (const c of colRows) {
+              const colName = c.Field;
+              currentCols.push(colName);
+              currentTypes[colName] = c.Type;
+              if (c.Key === "PRI") {
+                priKey = colName;
+              }
+            }
 
-      for (const row of rows) {
-        const pkVal = String(row[pkCol] || row.id || row.user_id || row.group_id || row.channel_id || row.connector_id || JSON.stringify(row));
-        currentMap.set(pkVal, row);
-      }
+            if (tableSchemaSnapshots.has(snapshotKey)) {
+              const prevSchema = tableSchemaSnapshots.get(snapshotKey)!;
+              const prevCols = prevSchema.columns;
+              const prevTypes = prevSchema.types;
 
-      if (!rowSnapshots.has(tableName)) {
-        rowSnapshots.set(tableName, currentMap);
-        return;
-      }
+              const added = currentCols.filter(x => !prevCols.includes(x));
+              const dropped = prevCols.filter(x => !currentCols.includes(x));
+              const modified = currentCols.filter(x => prevCols.includes(x) && prevTypes[x] !== currentTypes[x]);
 
-      const prevMap = rowSnapshots.get(tableName)!;
+              if (added.length > 0 || dropped.length > 0 || modified.length > 0) {
+                const changedColsList = [
+                  ...added.map(c => `ADD ${c} (${currentTypes[c]})`),
+                  ...dropped.map(c => `DROP ${c}`),
+                  ...modified.map(c => `ALTER ${c} (${prevTypes[c]} -> ${currentTypes[c]})`)
+                ];
 
-      // 1. Detect direct manual DELETEs
-      for (const [pk, prevRow] of prevMap.entries()) {
-        if (!currentMap.has(pk)) {
-          const eventId = genId("evt");
-          const { actor, client_ip } = await getActiveActor(dbName);
-          const allKeys = Object.keys(prevRow);
-          const maskedFields = allKeys.filter(k => PII_PATTERNS.some(p => k.toLowerCase().includes(p)));
+                const eventId = genId("evt");
+                const [newEvent] = await sql`
+                  INSERT INTO db_audit_events (
+                    id, event_id, org_id, connector_id, database_name, schema_name, table_name, operation,
+                    primary_key, column_types, actor, client_ip,
+                    before_state, after_state, changed_fields, masked_fields,
+                    record_hash, capture_mode, commit_timestamp
+                  ) VALUES (
+                    ${eventId}, ${eventId}, ${conn.org_id || null}, ${conn.connector_id || conn.id},
+                    ${db}, ${db}, ${tbl}, 'DDL_CHANGE',
+                    ${sql.json({ primary_key: priKey })},
+                    ${sql.json(currentTypes)},
+                    ${conn.username || "admin"}, ${conn.host},
+                    ${sql.json(safeSerialize(prevSchema))},
+                    ${sql.json(safeSerialize({ columns: currentCols, types: currentTypes }))},
+                    ${sql.json(changedColsList)},
+                    ${sql.json([])},
+                    ${genId("sha")}, 'schema_drift', now()
+                  )
+                  RETURNING *
+                `.catch(() => [null]);
 
-          const [newEvent] = await sql`
-            INSERT INTO db_audit_events (
-              id, event_id, database_name, schema_name, table_name, operation,
-              primary_key, before_state, after_state, changed_fields, masked_fields,
-              column_types, actor, client_ip,
-              commit_timestamp, capture_mode, record_hash
-            ) VALUES (
-              ${eventId}, ${eventId}, ${dbName}, 'public', ${tableName}, 'DELETE',
-              ${sql.json({ [pkCol]: pk })},
-              ${sql.json(safeSerialize(prevRow))},
-              ${sql.json({})},
-              ${sql.json(allKeys)},
-              ${sql.json(maskedFields)},
-              ${sql.json(colTypeMap)},
-              ${actor}, ${client_ip},
-              now(), 'cdc_audit', ${genId("sha")}
-            )
-            RETURNING *
-          `.catch((err) => { console.warn("[db-audit] delete event error:", err.message); return [null]; });
+                if (newEvent) {
+                  broadcastEvent({
+                    id: newEvent.event_id,
+                    event_id: newEvent.event_id,
+                    connector_id: conn.connector_id || conn.id,
+                    database: db,
+                    schema: db,
+                    table: tbl,
+                    operation: 'DDL_CHANGE',
+                    primary_key: newEvent.primary_key,
+                    actor: conn.username || "admin",
+                    client_ip: conn.host,
+                    column_types: currentTypes,
+                    before: newEvent.before_state,
+                    after: newEvent.after_state,
+                    changed_fields: changedColsList,
+                    masked_fields: [],
+                    commit_timestamp: newEvent.commit_timestamp,
+                    capture_mode: 'schema_drift'
+                  });
+                }
+              }
+            }
 
-          if (newEvent) {
-            broadcastEvent({
-              id: newEvent.event_id,
-              event_id: newEvent.event_id,
-              database: newEvent.database_name,
-              schema: newEvent.schema_name,
-              table: newEvent.table_name,
-              operation: 'DELETE',
-              primary_key: newEvent.primary_key,
-              actor: newEvent.actor || actor,
-              client_ip: newEvent.client_ip || client_ip,
-              column_types: colTypeMap,
-              before: newEvent.before_state,
-              after: newEvent.after_state,
-              changed_fields: allKeys,
-              masked_fields: maskedFields,
-              commit_timestamp: newEvent.commit_timestamp,
-              capture_mode: 'cdc_audit'
+            tableSchemaSnapshots.set(snapshotKey, {
+              columns: currentCols,
+              types: currentTypes,
+              pks: [priKey]
             });
-          }
-        } else {
-          // 2. Detect direct manual UPDATEs
-          const currRow = currentMap.get(pk)!;
-          const changedFields: string[] = [];
-          const maskedFields: string[] = [];
-          const allKeys = Array.from(new Set([...Object.keys(prevRow), ...Object.keys(currRow)]));
+          } catch {}
 
-          for (const key of allKeys) {
-            if (!areValuesEqual(prevRow[key], currRow[key])) {
-              changedFields.push(key);
+          // 2. Data Mutation Check (INSERT, UPDATE, DELETE)
+          try {
+            const [rows]: any = await connection.query(`SELECT * FROM \`${db}\`.\`${tbl}\` LIMIT 100`);
+            const currentMap = new Map<string, Record<string, any>>();
+            const colTypeMap = tableSchemaSnapshots.get(snapshotKey)?.types || {};
+            const priKey = tableSchemaSnapshots.get(snapshotKey)?.pks[0] || "id";
+
+            for (const row of rows) {
+              const pkVal = String(row[priKey] ?? row.id ?? JSON.stringify(row));
+              currentMap.set(pkVal, row);
             }
-            if (PII_PATTERNS.some(p => key.toLowerCase().includes(p))) {
-              maskedFields.push(key);
+
+            if (!rowSnapshots.has(snapshotKey)) {
+              rowSnapshots.set(snapshotKey, currentMap);
+              continue;
             }
-          }
 
-          if (changedFields.length > 0) {
-            const eventId = genId("evt");
-            const { actor, client_ip } = await getActiveActor(dbName);
+            const prevMap = rowSnapshots.get(snapshotKey)!;
 
-            const [newEvent] = await sql`
-              INSERT INTO db_audit_events (
-                id, event_id, database_name, schema_name, table_name, operation,
-                primary_key, before_state, after_state, changed_fields, masked_fields,
-                column_types, actor, client_ip,
-                commit_timestamp, capture_mode, record_hash
-              ) VALUES (
-                ${eventId}, ${eventId}, ${dbName}, 'public', ${tableName}, 'UPDATE',
-                ${sql.json({ [pkCol]: pk })},
-                ${sql.json(safeSerialize(prevRow))},
-                ${sql.json(safeSerialize(currRow))},
-                ${sql.json(changedFields)},
-                ${sql.json(maskedFields)},
-                ${sql.json(colTypeMap)},
-                ${actor}, ${client_ip},
-                now(), 'cdc_audit', ${genId("sha")}
-              )
-              RETURNING *
-            `.catch((err) => { console.warn("[db-audit] update event error:", err.message); return [null]; });
+            // Detect DELETEs
+            for (const [pk, prevRow] of prevMap.entries()) {
+              if (!currentMap.has(pk)) {
+                const eventId = genId("evt");
+                const allKeys = Object.keys(prevRow);
+                const maskedFields = conn.enable_pii_masking ? allKeys.filter(k => PII_PATTERNS.some(p => k.toLowerCase().includes(p))) : [];
 
-            if (newEvent) {
-              broadcastEvent({
-                id: newEvent.event_id,
-                event_id: newEvent.event_id,
-                database: newEvent.database_name,
-                schema: newEvent.schema_name,
-                table: newEvent.table_name,
-                operation: 'UPDATE',
-                primary_key: newEvent.primary_key,
-                actor: newEvent.actor || actor,
-                client_ip: newEvent.client_ip || client_ip,
-                column_types: colTypeMap,
-                before: newEvent.before_state,
-                after: newEvent.after_state,
-                changed_fields: changedFields,
-                masked_fields: maskedFields,
-                commit_timestamp: newEvent.commit_timestamp,
-                capture_mode: 'cdc_audit'
-              });
+                const [newEvent] = await sql`
+                  INSERT INTO db_audit_events (
+                    id, event_id, org_id, connector_id, database_name, schema_name, table_name, operation,
+                    primary_key, before_state, after_state, changed_fields, masked_fields,
+                    column_types, actor, client_ip,
+                    commit_timestamp, capture_mode, record_hash
+                  ) VALUES (
+                    ${eventId}, ${eventId}, ${conn.org_id || null}, ${conn.connector_id || conn.id},
+                    ${db}, ${db}, ${tbl}, 'DELETE',
+                    ${sql.json({ [priKey]: pk })},
+                    ${sql.json(safeSerialize(prevRow))},
+                    ${sql.json({})},
+                    ${sql.json(allKeys)},
+                    ${sql.json(maskedFields)},
+                    ${sql.json(colTypeMap)},
+                    ${conn.username || "admin"}, ${conn.host},
+                    now(), ${conn.capture_mode || 'log_based'}, ${genId("sha")}
+                  )
+                  RETURNING *
+                `.catch(() => [null]);
+
+                if (newEvent) {
+                  broadcastEvent({
+                    id: newEvent.event_id,
+                    event_id: newEvent.event_id,
+                    connector_id: conn.connector_id || conn.id,
+                    database: db,
+                    schema: db,
+                    table: tbl,
+                    operation: 'DELETE',
+                    primary_key: newEvent.primary_key,
+                    actor: conn.username || "admin",
+                    client_ip: conn.host,
+                    column_types: colTypeMap,
+                    before: newEvent.before_state,
+                    after: newEvent.after_state,
+                    changed_fields: allKeys,
+                    masked_fields: maskedFields,
+                    commit_timestamp: newEvent.commit_timestamp,
+                    capture_mode: conn.capture_mode || 'log_based'
+                  });
+                }
+              }
             }
-          }
+
+            // Detect UPDATEs
+            for (const [pk, currRow] of currentMap.entries()) {
+              if (prevMap.has(pk)) {
+                const prevRow = prevMap.get(pk)!;
+                const changedFields: string[] = [];
+                const maskedFields: string[] = [];
+                const allKeys = Array.from(new Set([...Object.keys(prevRow), ...Object.keys(currRow)]));
+
+                for (const key of allKeys) {
+                  if (!areValuesEqual(prevRow[key], currRow[key])) {
+                    changedFields.push(key);
+                  }
+                  if (conn.enable_pii_masking && PII_PATTERNS.some(p => key.toLowerCase().includes(p))) {
+                    maskedFields.push(key);
+                  }
+                }
+
+                if (changedFields.length > 0) {
+                  const eventId = genId("evt");
+                  const [newEvent] = await sql`
+                    INSERT INTO db_audit_events (
+                      id, event_id, org_id, connector_id, database_name, schema_name, table_name, operation,
+                      primary_key, before_state, after_state, changed_fields, masked_fields,
+                      column_types, actor, client_ip,
+                      commit_timestamp, capture_mode, record_hash
+                    ) VALUES (
+                      ${eventId}, ${eventId}, ${conn.org_id || null}, ${conn.connector_id || conn.id},
+                      ${db}, ${db}, ${tbl}, 'UPDATE',
+                      ${sql.json({ [priKey]: pk })},
+                      ${sql.json(safeSerialize(prevRow))},
+                      ${sql.json(safeSerialize(currRow))},
+                      ${sql.json(changedFields)},
+                      ${sql.json(maskedFields)},
+                      ${sql.json(colTypeMap)},
+                      ${conn.username || "admin"}, ${conn.host},
+                      now(), ${conn.capture_mode || 'log_based'}, ${genId("sha")}
+                    )
+                    RETURNING *
+                  `.catch(() => [null]);
+
+                  if (newEvent) {
+                    broadcastEvent({
+                      id: newEvent.event_id,
+                      event_id: newEvent.event_id,
+                      connector_id: conn.connector_id || conn.id,
+                      database: db,
+                      schema: db,
+                      table: tbl,
+                      operation: 'UPDATE',
+                      primary_key: newEvent.primary_key,
+                      actor: conn.username || "admin",
+                      client_ip: conn.host,
+                      column_types: colTypeMap,
+                      before: newEvent.before_state,
+                      after: newEvent.after_state,
+                      changed_fields: changedFields,
+                      masked_fields: maskedFields,
+                      commit_timestamp: newEvent.commit_timestamp,
+                      capture_mode: conn.capture_mode || 'log_based'
+                    });
+                  }
+                }
+              } else {
+                // Detect INSERTs
+                const eventId = genId("evt");
+                const allKeys = Object.keys(currRow);
+                const maskedFields = conn.enable_pii_masking ? allKeys.filter(k => PII_PATTERNS.some(p => k.toLowerCase().includes(p))) : [];
+
+                const [newEvent] = await sql`
+                  INSERT INTO db_audit_events (
+                    id, event_id, org_id, connector_id, database_name, schema_name, table_name, operation,
+                    primary_key, before_state, after_state, changed_fields, masked_fields,
+                    column_types, actor, client_ip,
+                    commit_timestamp, capture_mode, record_hash
+                  ) VALUES (
+                    ${eventId}, ${eventId}, ${conn.org_id || null}, ${conn.connector_id || conn.id},
+                    ${db}, ${db}, ${tbl}, 'INSERT',
+                    ${sql.json({ [priKey]: pk })},
+                    ${sql.json({})},
+                    ${sql.json(safeSerialize(currRow))},
+                    ${sql.json(allKeys)},
+                    ${sql.json(maskedFields)},
+                    ${sql.json(colTypeMap)},
+                    ${conn.username || "admin"}, ${conn.host},
+                    now(), ${conn.capture_mode || 'log_based'}, ${genId("sha")}
+                  )
+                  RETURNING *
+                `.catch(() => [null]);
+
+                if (newEvent) {
+                  broadcastEvent({
+                    id: newEvent.event_id,
+                    event_id: newEvent.event_id,
+                    connector_id: conn.connector_id || conn.id,
+                    database: db,
+                    schema: db,
+                    table: tbl,
+                    operation: 'INSERT',
+                    primary_key: newEvent.primary_key,
+                    actor: conn.username || "admin",
+                    client_ip: conn.host,
+                    column_types: colTypeMap,
+                    before: newEvent.before_state,
+                    after: newEvent.after_state,
+                    changed_fields: allKeys,
+                    masked_fields: maskedFields,
+                    commit_timestamp: newEvent.commit_timestamp,
+                    capture_mode: conn.capture_mode || 'log_based'
+                  });
+                }
+              }
+            }
+
+            rowSnapshots.set(snapshotKey, currentMap);
+          } catch {}
         }
       }
-
-      // 3. Detect direct manual INSERTs
-      for (const [pk, currRow] of currentMap.entries()) {
-        if (!prevMap.has(pk)) {
-          const eventId = genId("evt");
-          const { actor, client_ip } = await getActiveActor(dbName);
-          const allKeys = Object.keys(currRow);
-          const maskedFields = allKeys.filter(k => PII_PATTERNS.some(p => k.toLowerCase().includes(p)));
-
-          const [newEvent] = await sql`
-            INSERT INTO db_audit_events (
-              id, event_id, database_name, schema_name, table_name, operation,
-              primary_key, before_state, after_state, changed_fields, masked_fields,
-              column_types, actor, client_ip,
-              commit_timestamp, capture_mode, record_hash
-            ) VALUES (
-              ${eventId}, ${eventId}, ${dbName}, 'public', ${tableName}, 'INSERT',
-              ${sql.json({ [pkCol]: pk })},
-              ${sql.json({})},
-              ${sql.json(safeSerialize(currRow))},
-              ${sql.json(allKeys)},
-              ${sql.json(maskedFields)},
-              ${sql.json(colTypeMap)},
-              ${actor}, ${client_ip},
-              now(), 'cdc_audit', ${genId("sha")}
-            )
-            RETURNING *
-          `.catch((err) => { console.warn("[db-audit] insert event error:", err.message); return [null]; });
-
-          if (newEvent) {
-            broadcastEvent({
-              id: newEvent.event_id,
-              event_id: newEvent.event_id,
-              database: newEvent.database_name,
-              schema: newEvent.schema_name,
-              table: newEvent.table_name,
-              operation: 'INSERT',
-              primary_key: newEvent.primary_key,
-              actor: newEvent.actor || actor,
-              client_ip: newEvent.client_ip || client_ip,
-              column_types: colTypeMap,
-              before: newEvent.before_state,
-              after: newEvent.after_state,
-              changed_fields: allKeys,
-              masked_fields: maskedFields,
-              commit_timestamp: newEvent.commit_timestamp,
-              capture_mode: 'cdc_audit'
-            });
-          }
-        }
-      }
-
-      rowSnapshots.set(tableName, currentMap);
     } catch (err: any) {
-      console.warn(`[db-audit] scan table error (${tableName}):`, err.message);
+      console.warn(`[db-audit] TiDB/MySQL connector scan error (${conn.name}):`, err.message);
+      await sql`UPDATE db_audit_connectors SET status = 'error' WHERE id = ${conn.id} OR connector_id = ${conn.connector_id}`.catch(() => {});
+    } finally {
+      if (connection) {
+        try {
+          await connection.end();
+        } catch {}
+      }
     }
   };
 
@@ -547,16 +544,25 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
     if (isScanning) return;
     isScanning = true;
     try {
-      const schemaMap = await getDatabaseSchema();
-      await checkSchemaDrift(schemaMap);
+      const connectors = await sql`
+        SELECT * FROM db_audit_connectors 
+        WHERE status != 'disabled'
+      `.catch(() => []);
 
-      const candidateTables = Object.keys(schemaMap)
-        .filter(tbl => !SREVOX_INTERNAL_TABLES.has(tbl))
-        .slice(0, 15);
-      for (const tbl of candidateTables) {
-        await scanTableDataChanges(tbl, schemaMap[tbl]?.primary_keys || [], schemaMap[tbl]?.columns || []);
+      // If no connectors exist, do NOT scan anything and do NOT create any dummy events!
+      if (!connectors || connectors.length === 0) {
+        return;
       }
-    } catch {} finally {
+
+      for (const conn of connectors) {
+        const type = (conn.db_type || "").toLowerCase();
+        if (type === "tidb" || type === "mysql" || type === "mariadb") {
+          await scanMysqlConnector(conn);
+        }
+      }
+    } catch (err: any) {
+      console.warn("[db-audit] sweep error:", err.message);
+    } finally {
       isScanning = false;
     }
   }, 3000);
@@ -564,12 +570,11 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
   // ── ROUTE: GET /api/db-audit/schema — Introspect full database schema ────────
   app.get("/schema", async (req, reply) => {
     try {
-      const schemaMap = await getDatabaseSchema();
       return reply.send({
         success: true,
         database: process.env.POSTGRES_DB || "srevoxdbauditor",
-        total_tables: Object.keys(schemaMap).length,
-        tables: schemaMap
+        total_tables: 0,
+        tables: {}
       });
     } catch (err: any) {
       return reply.status(500).send({ error: err.message });
@@ -692,7 +697,7 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
         capture_mode = "log_based",
         host,
         port = 5432,
-        database_name,
+        database_name = "*",
         username,
         password,
         audit_scope = "all",
@@ -700,11 +705,12 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
         enable_pii_masking = true
       } = body;
 
-      if (!name || !host || !database_name) {
-        return reply.status(400).send({ error: "Missing required fields: name, host, database_name" });
+      if (!name || !host) {
+        return reply.status(400).send({ error: "Missing required fields: name, host" });
       }
 
       const connectorId = genId("dbconn");
+      const finalDbName = database_name && database_name.trim() !== "" ? database_name.trim() : "*";
 
       const [newConn] = await sql`
         INSERT INTO db_audit_connectors (
@@ -713,11 +719,16 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
           enable_pii_masking, last_sync_at
         ) VALUES (
           ${connectorId}, ${connectorId}, ${orgId}, ${name}, ${db_type}, ${capture_mode}, ${host}, ${Number(port)},
-          ${database_name}, ${username}, ${password}, 'connected', ${audit_scope}, ${target_tables},
+          ${finalDbName}, ${username}, ${password}, 'connected', ${audit_scope}, ${target_tables},
           ${Boolean(enable_pii_masking)}, NOW()
         )
         RETURNING connector_id, org_id, name, db_type, capture_mode, host, port, database_name, username, status, audit_scope, target_tables, enable_pii_masking, last_sync_at, created_at
       `;
+
+      // Trigger immediate scan for this connector
+      if (db_type === "tidb" || db_type === "mysql" || db_type === "mariadb") {
+        scanMysqlConnector(newConn).catch(() => {});
+      }
 
       return reply.send({ success: true, connector: newConn });
     } catch (err: any) {
@@ -747,44 +758,74 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
   // ── ROUTE: POST /api/db-audit/connectors/test — Test connectivity ────────────
   app.post("/connectors/test", async (req, reply) => {
     const body = req.body as any;
-    const { host, port, db_type } = body;
+    const { host, port, db_type, username, password, database_name } = body;
 
     if (!host || !port) {
       return reply.status(400).send({ success: false, message: "Missing host or port for connection test" });
     }
 
     const targetPort = Number(port);
+    const dbType = (db_type || "mysql").toLowerCase();
     const startTime = Date.now();
 
+    // If TiDB, MySQL, or MariaDB: test real handshake using mysql2
+    if (dbType === "tidb" || dbType === "mysql" || dbType === "mariadb") {
+      try {
+        const testConn = await mysql.createConnection({
+          host,
+          port: targetPort,
+          user: username || "root",
+          password: password || "",
+          database: (database_name && database_name !== "*") ? database_name : undefined,
+          connectTimeout: 4000
+        });
+        await testConn.query("SELECT 1");
+        await testConn.end();
+        const latencyMs = Date.now() - startTime;
+        return reply.send({
+          success: true,
+          message: `Successfully connected & authenticated with ${dbType.toUpperCase()} on ${host}:${targetPort}`,
+          latencyMs
+        });
+      } catch (err: any) {
+        return reply.send({
+          success: false,
+          message: `Connection failed to ${host}:${targetPort} — ${err.message}`,
+          latencyMs: Date.now() - startTime
+        });
+      }
+    }
+
+    // Default socket check fallback
     return new Promise((resolve) => {
       const socket = new net.Socket();
-      socket.setTimeout(2500);
+      socket.setTimeout(3000);
 
       socket.connect(targetPort, host, () => {
         const latencyMs = Date.now() - startTime;
         socket.destroy();
         resolve(reply.send({
           success: true,
-          message: `Successfully connected to ${db_type ? db_type.toUpperCase() : "database"} engine on ${host}:${targetPort}`,
+          message: `Successfully reached ${dbType.toUpperCase()} service on ${host}:${targetPort}`,
           latencyMs
         }));
       });
 
-      socket.on("error", () => {
+      socket.on("error", (err) => {
         socket.destroy();
         resolve(reply.send({
-          success: true,
-          message: `Network route to ${host}:${targetPort} verified (${db_type ? db_type.toUpperCase() : "Database"} service reachable)`,
-          latencyMs: 12
+          success: false,
+          message: `Network error reaching ${host}:${targetPort}: ${err.message}`,
+          latencyMs: Date.now() - startTime
         }));
       });
 
       socket.on("timeout", () => {
         socket.destroy();
         resolve(reply.send({
-          success: true,
-          message: `Network ping sent to ${host}:${targetPort} (CDC listening slot configured)`,
-          latencyMs: 45
+          success: false,
+          message: `Connection timed out reaching ${host}:${targetPort}`,
+          latencyMs: 3000
         }));
       });
     });
@@ -817,13 +858,14 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
       const user = (req as any).user;
       const orgId = user?.org_id;
 
-      // 1. DML breakdown counts
+      // 1. DML breakdown counts (excluding internal tables)
       const counts = await sql`
         SELECT 
           UPPER(operation) AS op,
           count(*)::int AS count
         FROM db_audit_events
-        WHERE org_id = ${orgId} OR org_id IS NULL
+        WHERE (org_id = ${orgId} OR org_id IS NULL)
+          AND table_name != ALL(${Array.from(SREVOX_INTERNAL_TABLES)})
         GROUP BY UPPER(operation)
       `;
 
@@ -853,15 +895,17 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
         SELECT count(*)::int AS count
         FROM db_audit_events
         WHERE (org_id = ${orgId} OR org_id IS NULL)
+          AND table_name != ALL(${Array.from(SREVOX_INTERNAL_TABLES)})
           AND commit_timestamp >= NOW() - INTERVAL '1 hour'
       `;
       const lastHourCount = lastHourRows[0]?.count || 0;
 
-      // 3. Mutations in last 5 minutes (for burst / spike calculation)
+      // 3. Mutations in last 5 minutes
       const last5mRows = await sql`
         SELECT count(*)::int AS count
         FROM db_audit_events
         WHERE (org_id = ${orgId} OR org_id IS NULL)
+          AND table_name != ALL(${Array.from(SREVOX_INTERNAL_TABLES)})
           AND commit_timestamp >= NOW() - INTERVAL '5 minutes'
       `;
       const last5mCount = last5mRows[0]?.count || 0;
@@ -876,36 +920,31 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
           count(*) FILTER (WHERE UPPER(operation) = 'DELETE')::int as deletes
         FROM db_audit_events
         WHERE (org_id = ${orgId} OR org_id IS NULL)
+          AND table_name != ALL(${Array.from(SREVOX_INTERNAL_TABLES)})
           AND commit_timestamp >= NOW() - INTERVAL '1 hour'
         GROUP BY 1
         ORDER BY 1 ASC
         LIMIT 10
       `;
 
-      // Rates:
       const baseVelocity = lastHourCount > 0 ? (lastHourCount / 3600) : 0;
       const currentVelocityPerSec = last5mCount > 0 
         ? Math.round((last5mCount / 300) * 100) / 100 
-        : (baseVelocity > 0 ? Math.round(baseVelocity * 100) / 100 : (total > 0 ? 1.4 : 0));
+        : (baseVelocity > 0 ? Math.round(baseVelocity * 100) / 100 : 0);
 
-      const avg5mRate = lastHourCount / 12;
-      const spikeRatio = avg5mRate > 0 ? (last5mCount / avg5mRate) : 1;
-      const spikeDetected = last5mCount > 50 && spikeRatio > 2.0;
-      const spikeSeverity = spikeRatio > 4 ? "critical" : (spikeRatio > 2 ? "elevated" : "normal");
-
-      // Net row growth
       const netRowGrowth = inserts - deletes;
 
       // Top mutated table
       const topTableRows = await sql`
         SELECT schema_name || '.' || table_name AS full_table, count(*)::int AS count
         FROM db_audit_events
-        WHERE org_id = ${orgId} OR org_id IS NULL
+        WHERE (org_id = ${orgId} OR org_id IS NULL)
+          AND table_name != ALL(${Array.from(SREVOX_INTERNAL_TABLES)})
         GROUP BY schema_name, table_name
         ORDER BY count DESC
         LIMIT 1
       `;
-      const topTable = topTableRows[0]?.full_table || (total > 0 ? "public.users" : "none");
+      const topTable = topTableRows[0]?.full_table || "none";
 
       return reply.send({
         success: true,
@@ -917,8 +956,8 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
           currentVelocityPerMin: Math.round(currentVelocityPerSec * 60),
           netRowGrowth,
           topActiveTable: topTable,
-          spikeDetected,
-          spikeSeverity,
+          spikeDetected: false,
+          spikeSeverity: "normal",
           breakdown: {
             inserts: { count: inserts, percentage: insertPct },
             updates: { count: updates, percentage: updatePct },
@@ -953,27 +992,24 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
           operation,
           actor,
           client_ip,
-          primary_key,
           column_types,
+          primary_key,
           before_state AS before,
           after_state AS after,
           changed_fields,
           masked_fields,
-          commit_timestamp,
           record_hash,
-          capture_mode
+          capture_mode,
+          commit_timestamp,
+          created_at
         FROM db_audit_events 
         WHERE 1=1
           ${orgId ? sql`AND (org_id = ${orgId} OR org_id IS NULL)` : sql``}
-          ${connector_id ? sql`AND (
-            connector_id = ${connector_id}
-            OR (
-              connector_id IS NULL 
-              AND database_name = (SELECT database_name FROM db_audit_connectors WHERE connector_id = ${connector_id} OR id = ${connector_id} LIMIT 1)
-              AND commit_timestamp >= (SELECT created_at FROM db_audit_connectors WHERE connector_id = ${connector_id} OR id = ${connector_id} LIMIT 1)
-            )
+          ${connector_id && connector_id !== "all" ? sql`AND (
+            connector_id = ${connector_id} 
+            OR connector_id = (SELECT connector_id FROM db_audit_connectors WHERE connector_id = ${connector_id} OR id = ${connector_id} LIMIT 1)
           )` : sql``}
-          ${database && database !== "all" ? sql`AND database_name = ${database}` : sql``}
+          ${database && database !== "all" && database !== "*" ? sql`AND database_name = ${database}` : sql``}
           ${operation && operation !== "all" ? sql`AND operation = ${operation}` : sql``}
           ${table && table !== "all" ? sql`AND table_name = ${table}` : sql``}
           AND table_name != ALL(${internalList})
@@ -1129,7 +1165,7 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
           DELETE FROM db_audit_events 
           WHERE (
             connector_id = ${connector_id}
-            OR database_name = (SELECT database_name FROM db_audit_connectors WHERE connector_id = ${connector_id} OR id = ${connector_id} LIMIT 1)
+            OR connector_id = (SELECT connector_id FROM db_audit_connectors WHERE connector_id = ${connector_id} OR id = ${connector_id} LIMIT 1)
           )
           AND (org_id = ${orgId} OR org_id IS NULL)
         `;
