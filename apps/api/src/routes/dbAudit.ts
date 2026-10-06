@@ -203,6 +203,11 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
             }
           }
 
+          // Persist discovered table count for dashboard telemetry
+          if (tables.length > 0) {
+            await sql`UPDATE db_audit_connectors SET table_count = ${tables.length}, monitored_tables = ${tables.join(',')}, status = 'connected', last_sync_at = NOW() WHERE id = ${conn.id} OR connector_id = ${conn.connector_id}`.catch(() => {});
+          }
+
           const scanTables = tables.slice(0, 40);
 
           for (const tbl of scanTables) {
@@ -565,6 +570,10 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
               }
             }
           }
+
+          if (tables.length > 0) {
+            await sql`UPDATE db_audit_connectors SET table_count = ${tables.length}, monitored_tables = ${tables.join(',')}, status = 'connected', last_sync_at = NOW() WHERE id = ${conn.id} OR connector_id = ${conn.connector_id}`.catch(() => {});
+          }
         } catch {
           continue;
         }
@@ -875,14 +884,14 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
         return;
       }
 
-      for (const conn of connectors) {
+      await Promise.allSettled(connectors.map(async (conn) => {
         const type = (conn.db_type || "").toLowerCase();
-        if (type === "postgresql" || type === "postgres") {
+        if (["postgresql", "postgres", "neon", "supabase", "cockroachdb", "timescaledb"].includes(type)) {
           await scanPostgresConnector(conn);
-        } else if (type === "tidb" || type === "mysql" || type === "mariadb") {
+        } else if (["tidb", "mysql", "mariadb", "oceanbase", "planetscale", "singlestore"].includes(type)) {
           await scanMysqlConnector(conn);
         }
-      }
+      }));
     } catch (err: any) {
       console.warn("[db-audit] sweep error:", err.message);
     } finally {
@@ -893,11 +902,36 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
   // ── ROUTE: GET /api/db-audit/schema — Introspect full database schema ────────
   app.get("/schema", async (req, reply) => {
     try {
+      const orgId = extractOrgId(req);
+      const connectors = await sql`
+        SELECT connector_id, database_name, table_count, monitored_tables
+        FROM db_audit_connectors
+        WHERE status != 'disabled'
+          ${orgId ? sql`AND (org_id = ${orgId} OR org_id IS NULL)` : sql``}
+      `.catch(() => []);
+
+      const tablesMap: Record<string, any> = {};
+
+      for (const c of connectors) {
+        if (c.monitored_tables) {
+          const tblList = c.monitored_tables.split(",").map((t: string) => t.trim()).filter(Boolean);
+          for (const tbl of tblList) {
+            tablesMap[tbl] = {
+              columns: [],
+              rows_estimate: 0,
+              connector_id: c.connector_id
+            };
+          }
+        }
+      }
+
+      const totalTables = Object.keys(tablesMap).length;
+
       return reply.send({
         success: true,
-        database: process.env.POSTGRES_DB || "srevoxdbauditor",
-        total_tables: 0,
-        tables: {}
+        database: connectors[0]?.database_name || "all",
+        total_tables: totalTables,
+        tables: tablesMap
       });
     } catch (err: any) {
       return reply.status(500).send({ error: err.message });
@@ -925,7 +959,7 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
         SELECT 
           connector_id, org_id, name, db_type, capture_mode, host, port, 
           database_name, username, status, audit_scope, target_tables, 
-          enable_pii_masking, last_sync_at, created_at
+          enable_pii_masking, table_count, monitored_tables, last_sync_at, created_at
         FROM db_audit_connectors 
         WHERE 1=1 ${orgId ? sql`AND (org_id = ${orgId} OR org_id IS NULL)` : sql``}
         ORDER BY created_at DESC
@@ -1049,10 +1083,11 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
       `;
 
       // Trigger immediate scan for this connector
+      const connWithSecret = { ...newConn, password };
       if (db_type === "postgresql" || db_type === "postgres") {
-        scanPostgresConnector(newConn).catch(() => {});
+        scanPostgresConnector(connWithSecret).catch(() => {});
       } else if (db_type === "tidb" || db_type === "mysql" || db_type === "mariadb") {
-        scanMysqlConnector(newConn).catch(() => {});
+        scanMysqlConnector(connWithSecret).catch(() => {});
       }
 
       // Publish to Redis channel for Go/Rust CDC consumers
@@ -1097,8 +1132,37 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
     const dbType = (db_type || "mysql").toLowerCase();
     const startTime = Date.now();
 
+    // If PostgreSQL family: test real handshake using postgres.js
+    if (["postgresql", "postgres", "neon", "supabase", "cockroachdb", "timescaledb"].includes(dbType)) {
+      try {
+        const testPg = postgres({
+          host,
+          port: targetPort,
+          username: username || "postgres",
+          password: password || "",
+          database: (database_name && database_name !== "*") ? database_name : (username || "postgres"),
+          connect_timeout: 4,
+          max: 1
+        });
+        await testPg`SELECT 1`;
+        await testPg.end({ timeout: 1 }).catch(() => {});
+        const latencyMs = Date.now() - startTime;
+        return reply.send({
+          success: true,
+          message: `Successfully connected & authenticated with ${dbType.toUpperCase()} on ${host}:${targetPort}`,
+          latencyMs
+        });
+      } catch (err: any) {
+        return reply.send({
+          success: false,
+          message: `Connection failed to ${host}:${targetPort} — ${err.message}`,
+          latencyMs: Date.now() - startTime
+        });
+      }
+    }
+
     // If TiDB, MySQL, or MariaDB: test real handshake using mysql2
-    if (dbType === "tidb" || dbType === "mysql" || dbType === "mariadb") {
+    if (["tidb", "mysql", "mariadb", "oceanbase", "planetscale", "singlestore"].includes(dbType)) {
       try {
         const testConn = await mysql.createConnection({
           host,

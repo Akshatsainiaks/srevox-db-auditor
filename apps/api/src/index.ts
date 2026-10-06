@@ -516,6 +516,8 @@ async function start() {
         )
       `;
       await sql`CREATE INDEX IF NOT EXISTS idx_db_audit_connectors_org ON db_audit_connectors(org_id)`;
+      await sql`ALTER TABLE db_audit_connectors ADD COLUMN IF NOT EXISTS table_count INT DEFAULT 0`.catch(() => {});
+      await sql`ALTER TABLE db_audit_connectors ADD COLUMN IF NOT EXISTS monitored_tables TEXT DEFAULT ''`.catch(() => {});
 
       // Table 20: db_audit_events
       await sql`

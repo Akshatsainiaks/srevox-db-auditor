@@ -73,6 +73,8 @@ interface Connector {
   audit_scope?: string;
   target_tables?: string | null;
   enable_pii_masking?: boolean;
+  table_count?: number;
+  monitored_tables?: string;
   last_sync_at?: string;
   created_at: string;
 }

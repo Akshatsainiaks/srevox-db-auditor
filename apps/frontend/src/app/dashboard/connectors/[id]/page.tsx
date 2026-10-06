@@ -407,7 +407,11 @@ export default function ConnectorDetailPage({ params }: ConnectorDetailProps) {
     return pages;
   };
 
-  const availableTables = Array.from(new Set(dbEvents.map((e) => e.table).filter(Boolean)));
+  const discoveredTables = (connector?.monitored_tables ? connector.monitored_tables.split(',').map((t: string) => t.trim()).filter(Boolean) : []) as string[];
+  const schemaTableList = schemaData?.tables ? Object.keys(schemaData.tables) : [];
+  const eventTableList = dbEvents.map((e) => e.table).filter(Boolean);
+  const availableTables = Array.from(new Set([...discoveredTables, ...schemaTableList, ...eventTableList]));
+  const totalMonitoredCount = connector?.table_count || availableTables.length || schemaData?.total_tables || 0;
 
   return (
     <div className="space-y-6 max-w-7xl mx-auto pb-12 animate-fade-in">
@@ -541,7 +545,7 @@ export default function ConnectorDetailPage({ params }: ConnectorDetailProps) {
             </span>
           </div>
           <div className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white mb-1">
-            {availableTables.length > 0 ? `${availableTables.length} Tables` : "0 Tables"}
+            {totalMonitoredCount > 0 ? `${totalMonitoredCount} Tables` : "0 Tables"}
           </div>
           <div className="text-xs font-semibold text-gray-500 dark:text-slate-400">Monitored Tables</div>
           <div className="mt-1 text-[11px] text-gray-400 dark:text-slate-500">

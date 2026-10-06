@@ -165,6 +165,7 @@ export default function ConnectorModal({ onClose, onConnectorCreated }: Connecto
         port: Number(port),
         database_name: databaseName,
         username,
+        password,
         audit_scope: auditScope,
         target_tables: targetTables,
         enable_pii_masking: enablePiiMasking,

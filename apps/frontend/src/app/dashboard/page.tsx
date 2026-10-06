@@ -81,6 +81,8 @@ interface Connector {
   capture_mode?: string;
   replication_slot?: string;
   tables_count?: number;
+  table_count?: number;
+  monitored_tables?: string;
   lag_ms?: number;
 }
 
@@ -230,11 +232,11 @@ export default function DashboardPage() {
     (c) => !c.status || c.status.toLowerCase() === "active" || c.status.toLowerCase() === "connected" || c.status.toLowerCase() === "healthy" || c.status.toLowerCase() === "online"
   ).length;
   const errorConnectors = connectors.filter((c) => c.status?.toLowerCase() === "error" || c.status?.toLowerCase() === "failed").length;
-  const healthPct = connectors.length ? Math.round((onlineConnectors / connectors.length) * 100) : 100;
+  const healthPct = connectors.length ? Math.round((onlineConnectors / connectors.length) * 100) : 0;
 
   // Compute stats
   const totalEventsToday = velocityData?.totalMutations ?? (events.length > 0 ? events.length : 0);
-  const totalTablesTracked = connectors.reduce((acc, c) => acc + (c.tables_count || 12), 0);
+  const totalTablesTracked = connectors.reduce((acc, c) => acc + (c.table_count || c.tables_count || 0), 0);
 
   if (loading) {
     return (
@@ -372,11 +374,11 @@ export default function DashboardPage() {
                     "w-1.5 h-1.5 rounded-full",
                     healthPct >= 90 ? "bg-emerald-500" : healthPct >= 50 ? "bg-amber-500" : "bg-red-500"
                   )} />
-                  {healthPct}% Online
+                  {connectors.length > 0 ? `${healthPct}% Online` : "0 Connected"}
                 </span>
               </div>
               <div className="text-3xl font-black font-mono tracking-tight text-gray-900 dark:text-white mb-1">
-                {onlineConnectors}<span className="text-lg font-normal text-gray-400 dark:text-slate-600">/{connectors.length || 1}</span>
+                {connectors.length === 0 ? "0" : `${onlineConnectors}/${connectors.length}`}
               </div>
               <div className="text-xs font-semibold text-gray-600 dark:text-slate-300">
                 Database Sources
@@ -404,7 +406,7 @@ export default function DashboardPage() {
                 </span>
               </div>
               <div className="text-3xl font-black font-mono tracking-tight text-gray-900 dark:text-white mb-1">
-                {totalTablesTracked || 12}
+                {totalTablesTracked}
               </div>
               <div className="text-xs font-semibold text-gray-600 dark:text-slate-300">
                 Audited Tables
