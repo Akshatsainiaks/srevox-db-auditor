@@ -55,12 +55,7 @@ import { useConfirm } from "@/components/ConfirmModal";
 import RowDiffViewer from "@/components/data-audit/RowDiffViewer";
 
 const SREVOX_INTERNAL_TABLES = new Set([
-  "db_audit_events", "db_audit_connectors", "receipts", "audit_events",
-  "channels", "alert_rules", "alerts_sent",
-  "retention_policies", "retention_runs", "user_notifications",
-  "user_alert_preferences", "service_owners", "service_owner_settings",
-  "system_alert_settings", "invitations",
-  "activity_log", "notification_groups"
+  "db_audit_events", "db_audit_connectors", "schema_migrations", "schema_version"
 ]);
 
 const DB_ICONS: Record<string, string> = {

@@ -1,45 +1,16 @@
 import { FastifyInstance } from "fastify";
 import net from "net";
 import mysql from "mysql2/promise";
+import postgres from "postgres";
+import redis from "../db/redis.js";
 import { genId } from "../utils/id.js";
 import sql from "../db/sql.js";
 
 const SREVOX_INTERNAL_TABLES = new Set([
-  "users",
-  "organizations",
-  "groups",
-  "group_members",
-  "user_sessions",
-  "schema_migrations",
-  "schema_version",
   "db_audit_events",
   "db_audit_connectors",
-  "receipts",
-  "audit_events",
-  "clusters",
-  "cluster_nodes",
-  "cluster_nodes_history",
-  "cluster_pods",
-  "incidents",
-  "user_ai_diagnoses",
-  "channels",
-  "alert_rules",
-  "alerts_sent",
-  "retention_policies",
-  "retention_runs",
-  "user_notifications",
-  "user_alert_preferences",
-  "service_owners",
-  "service_owner_settings",
-  "machines",
-  "machine_alert_rules",
-  "machine_telemetry_history",
-  "resource_alerts",
-  "system_alert_settings",
-  "ai_settings",
-  "invitations",
-  "activity_log",
-  "notification_groups"
+  "schema_migrations",
+  "schema_version"
 ]);
 
 const PII_PATTERNS = ["password", "ssn", "tax_id", "credit_card", "cvv", "api_token", "secret", "access_token", "private_key", "hashed_password", "token", "card_hash"];
@@ -114,11 +85,432 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
         client(evt);
       } catch {}
     }
+    try {
+      redis.publish("db_audit:events", JSON.stringify(evt)).catch(() => {});
+    } catch {}
   };
 
   // ── IN-MEMORY SCHEMA & DATA SNAPSHOT ENGINE ─────────────────────────────────
   const tableSchemaSnapshots = new Map<string, { columns: string[]; types: Record<string, string>; pks: string[] }>();
   const rowSnapshots = new Map<string, Map<string, Record<string, any>>>();
+
+
+  // ── POSTGRESQL EXTERNAL CDC SCANNER ──────────────────────────────────────────
+  const scanPostgresConnector = async (conn: any) => {
+    try {
+      const targetPort = Number(conn.port) || 5432;
+      const configuredDb = (conn.database_name || "").trim();
+      const isWildcard = !configuredDb || configuredDb === "*" || configuredDb.toLowerCase() === "all" || configuredDb.toLowerCase() === "all_databases";
+
+      // 1. Enumerate target databases
+      const targetDbs: string[] = [];
+      if (isWildcard) {
+        let enumClient: any = null;
+        try {
+          enumClient = postgres({
+            host: conn.host,
+            port: targetPort,
+            database: "postgres",
+            username: conn.username || "postgres",
+            password: conn.password || "",
+            connect_timeout: 4,
+            max: 1,
+            idle_timeout: 4
+          });
+          const rows = await enumClient`
+            SELECT datname FROM pg_database 
+            WHERE datistemplate = false 
+              AND datname NOT IN ('postgres', 'template0', 'template1')
+          `;
+          for (const r of rows) {
+            if (r.datname) targetDbs.push(r.datname);
+          }
+        } catch {
+          // If connecting to 'postgres' db fails, try connecting to 'srevox' or default db
+          try {
+            if (enumClient) await enumClient.end({ timeout: 1 }).catch(() => {});
+            enumClient = postgres({
+              host: conn.host,
+              port: targetPort,
+              database: "srevox",
+              username: conn.username || "postgres",
+              password: conn.password || "",
+              connect_timeout: 4,
+              max: 1,
+              idle_timeout: 4
+            });
+            const rows = await enumClient`
+              SELECT datname FROM pg_database 
+              WHERE datistemplate = false 
+                AND datname NOT IN ('postgres', 'template0', 'template1')
+            `;
+            for (const r of rows) {
+              if (r.datname && !targetDbs.includes(r.datname)) targetDbs.push(r.datname);
+            }
+          } catch {}
+        } finally {
+          if (enumClient) await enumClient.end({ timeout: 1 }).catch(() => {});
+        }
+
+        if (targetDbs.length === 0) {
+          targetDbs.push(conn.username || "srevox");
+        }
+      } else {
+        targetDbs.push(configuredDb);
+      }
+
+      // Update connector status to connected
+      await sql`
+        UPDATE db_audit_connectors 
+        SET status = 'connected', last_sync_at = NOW() 
+        WHERE id = ${conn.id} OR connector_id = ${conn.connector_id}
+      `.catch(() => {});
+
+      // User target tables filter if custom scope
+      const allowedTables = (conn.audit_scope === "custom" && conn.target_tables)
+        ? new Set(conn.target_tables.split(",").map((t: string) => t.trim().toLowerCase()).filter(Boolean))
+        : null;
+
+      for (const db of targetDbs) {
+        let dbClient: any = null;
+        try {
+          dbClient = postgres({
+            host: conn.host,
+            port: targetPort,
+            database: db,
+            username: conn.username || "postgres",
+            password: conn.password || "",
+            connect_timeout: 5,
+            max: 1,
+            idle_timeout: 5
+          });
+
+          // Fetch all user tables in public schema
+          const tableRows = await dbClient`
+            SELECT table_name 
+            FROM information_schema.tables 
+            WHERE table_schema = 'public' 
+              AND table_type = 'BASE TABLE'
+          `;
+
+          const tables: string[] = [];
+          for (const r of tableRows) {
+            const tbl = r.table_name;
+            if (typeof tbl === "string" && !tbl.startsWith("_") && !SREVOX_INTERNAL_TABLES.has(tbl.toLowerCase())) {
+              if (!allowedTables || allowedTables.has(tbl.toLowerCase())) {
+                tables.push(tbl);
+              }
+            }
+          }
+
+          const scanTables = tables.slice(0, 40);
+
+          for (const tbl of scanTables) {
+            const snapshotKey = `postgres:${conn.connector_id || conn.id}:${db}:${tbl}`;
+
+            // 1. Column / Schema Drift Check (DDL)
+            try {
+              const colRows = await dbClient`
+                SELECT column_name, data_type, is_nullable, column_default 
+                FROM information_schema.columns 
+                WHERE table_schema = 'public' AND table_name = ${tbl}
+                ORDER BY ordinal_position
+              `;
+
+              const pkRows = await dbClient`
+                SELECT kcu.column_name
+                FROM information_schema.table_constraints tc
+                JOIN information_schema.key_column_usage kcu
+                  ON tc.constraint_name = kcu.constraint_name
+                  AND tc.table_schema = kcu.table_schema
+                WHERE tc.constraint_type = 'PRIMARY KEY'
+                  AND tc.table_schema = 'public'
+                  AND tc.table_name = ${tbl}
+              `;
+
+              const currentCols: string[] = [];
+              const currentTypes: Record<string, string> = {};
+              let priKey = pkRows[0]?.column_name || "id";
+
+              for (const c of colRows) {
+                const colName = c.column_name;
+                currentCols.push(colName);
+                currentTypes[colName] = c.data_type;
+                if (!pkRows[0] && (colName === "id" || colName === `${tbl}_id` || colName.endsWith("_id"))) {
+                  priKey = colName;
+                }
+              }
+
+              if (tableSchemaSnapshots.has(snapshotKey)) {
+                const prevSchema = tableSchemaSnapshots.get(snapshotKey)!;
+                const prevCols = prevSchema.columns;
+                const prevTypes = prevSchema.types;
+
+                const added = currentCols.filter(x => !prevCols.includes(x));
+                const dropped = prevCols.filter(x => !currentCols.includes(x));
+                const modified = currentCols.filter(x => prevCols.includes(x) && prevTypes[x] !== currentTypes[x]);
+
+                if (added.length > 0 || dropped.length > 0 || modified.length > 0) {
+                  const changedColsList = [
+                    ...added.map(c => `ADD ${c} (${currentTypes[c]})`),
+                    ...dropped.map(c => `DROP ${c}`),
+                    ...modified.map(c => `ALTER ${c} (${prevTypes[c]} -> ${currentTypes[c]})`)
+                  ];
+
+                  const eventId = genId("evt");
+                  const [newEvent] = await sql`
+                    INSERT INTO db_audit_events (
+                      id, event_id, org_id, connector_id, database_name, schema_name, table_name, operation,
+                      primary_key, column_types, actor, client_ip,
+                      before_state, after_state, changed_fields, masked_fields,
+                      record_hash, capture_mode, commit_timestamp
+                    ) VALUES (
+                      ${eventId}, ${eventId}, ${conn.org_id || null}, ${conn.connector_id || conn.id},
+                      ${db}, 'public', ${tbl}, 'DDL_CHANGE',
+                      ${sql.json({ primary_key: priKey })},
+                      ${sql.json(currentTypes)},
+                      ${conn.username || "postgres"}, ${conn.host},
+                      ${sql.json(safeSerialize(prevSchema))},
+                      ${sql.json(safeSerialize({ columns: currentCols, types: currentTypes }))},
+                      ${sql.json(changedColsList)},
+                      ${sql.json([])},
+                      ${genId("sha")}, 'schema_drift', now()
+                    )
+                    RETURNING *
+                  `.catch(() => [null]);
+
+                  if (newEvent) {
+                    broadcastEvent({
+                      id: newEvent.event_id,
+                      event_id: newEvent.event_id,
+                      connector_id: conn.connector_id || conn.id,
+                      database: db,
+                      schema: 'public',
+                      table: tbl,
+                      operation: 'DDL_CHANGE',
+                      primary_key: newEvent.primary_key,
+                      actor: conn.username || "postgres",
+                      client_ip: conn.host,
+                      column_types: currentTypes,
+                      before: newEvent.before_state,
+                      after: newEvent.after_state,
+                      changed_fields: changedColsList,
+                      masked_fields: [],
+                      commit_timestamp: newEvent.commit_timestamp,
+                      capture_mode: 'schema_drift'
+                    });
+                  }
+                }
+              }
+
+              tableSchemaSnapshots.set(snapshotKey, {
+                columns: currentCols,
+                types: currentTypes,
+                pks: [priKey]
+              });
+            } catch {}
+
+            // 2. Data Mutation Check (INSERT, UPDATE, DELETE)
+            try {
+              const rows = await dbClient`SELECT * FROM ${dbClient(tbl)} LIMIT 100`;
+              const currentMap = new Map<string, Record<string, any>>();
+              const colTypeMap = tableSchemaSnapshots.get(snapshotKey)?.types || {};
+              const priKey = tableSchemaSnapshots.get(snapshotKey)?.pks[0] || "id";
+
+              for (const row of rows) {
+                const pkVal = String(row[priKey] ?? row.id ?? row[`${tbl}_id`] ?? JSON.stringify(row));
+                currentMap.set(pkVal, safeSerialize(row));
+              }
+
+              if (!rowSnapshots.has(snapshotKey)) {
+                rowSnapshots.set(snapshotKey, currentMap);
+                continue;
+              }
+
+              const prevMap = rowSnapshots.get(snapshotKey)!;
+
+              // Detect DELETEs
+              for (const [pk, prevRow] of prevMap.entries()) {
+                if (!currentMap.has(pk)) {
+                  const eventId = genId("evt");
+                  const allKeys = Object.keys(prevRow);
+                  const maskedFields = conn.enable_pii_masking ? allKeys.filter(k => PII_PATTERNS.some(p => k.toLowerCase().includes(p))) : [];
+
+                  const [newEvent] = await sql`
+                    INSERT INTO db_audit_events (
+                      id, event_id, org_id, connector_id, database_name, schema_name, table_name, operation,
+                      primary_key, before_state, after_state, changed_fields, masked_fields,
+                      column_types, actor, client_ip,
+                      commit_timestamp, capture_mode, record_hash
+                    ) VALUES (
+                      ${eventId}, ${eventId}, ${conn.org_id || null}, ${conn.connector_id || conn.id},
+                      ${db}, 'public', ${tbl}, 'DELETE',
+                      ${sql.json({ [priKey]: pk })},
+                      ${sql.json(safeSerialize(prevRow))},
+                      ${sql.json({})},
+                      ${sql.json(allKeys)},
+                      ${sql.json(maskedFields)},
+                      ${sql.json(colTypeMap)},
+                      ${conn.username || "postgres"}, ${conn.host},
+                      now(), ${conn.capture_mode || 'log_based'}, ${genId("sha")}
+                    )
+                    RETURNING *
+                  `.catch(() => [null]);
+
+                  if (newEvent) {
+                    broadcastEvent({
+                      id: newEvent.event_id,
+                      event_id: newEvent.event_id,
+                      connector_id: conn.connector_id || conn.id,
+                      database: db,
+                      schema: 'public',
+                      table: tbl,
+                      operation: 'DELETE',
+                      primary_key: newEvent.primary_key,
+                      actor: conn.username || "postgres",
+                      client_ip: conn.host,
+                      column_types: colTypeMap,
+                      before: newEvent.before_state,
+                      after: newEvent.after_state,
+                      changed_fields: allKeys,
+                      masked_fields: maskedFields,
+                      commit_timestamp: newEvent.commit_timestamp,
+                      capture_mode: conn.capture_mode || 'log_based'
+                    });
+                  }
+                }
+              }
+
+              // Detect UPDATEs
+              for (const [pk, currRow] of currentMap.entries()) {
+                if (prevMap.has(pk)) {
+                  const prevRow = prevMap.get(pk)!;
+                  const changedFields: string[] = [];
+                  const maskedFields: string[] = [];
+                  const allKeys = Array.from(new Set([...Object.keys(prevRow), ...Object.keys(currRow)]));
+
+                  for (const key of allKeys) {
+                    if (!areValuesEqual(prevRow[key], currRow[key])) {
+                      changedFields.push(key);
+                    }
+                    if (conn.enable_pii_masking && PII_PATTERNS.some(p => key.toLowerCase().includes(p))) {
+                      maskedFields.push(key);
+                    }
+                  }
+
+                  if (changedFields.length > 0) {
+                    const eventId = genId("evt");
+                    const [newEvent] = await sql`
+                      INSERT INTO db_audit_events (
+                        id, event_id, org_id, connector_id, database_name, schema_name, table_name, operation,
+                        primary_key, before_state, after_state, changed_fields, masked_fields,
+                        column_types, actor, client_ip,
+                        commit_timestamp, capture_mode, record_hash
+                      ) VALUES (
+                        ${eventId}, ${eventId}, ${conn.org_id || null}, ${conn.connector_id || conn.id},
+                        ${db}, 'public', ${tbl}, 'UPDATE',
+                        ${sql.json({ [priKey]: pk })},
+                        ${sql.json(safeSerialize(prevRow))},
+                        ${sql.json(safeSerialize(currRow))},
+                        ${sql.json(changedFields)},
+                        ${sql.json(maskedFields)},
+                        ${sql.json(colTypeMap)},
+                        ${conn.username || "postgres"}, ${conn.host},
+                        now(), ${conn.capture_mode || 'log_based'}, ${genId("sha")}
+                      )
+                      RETURNING *
+                    `.catch(() => [null]);
+
+                    if (newEvent) {
+                      broadcastEvent({
+                        id: newEvent.event_id,
+                        event_id: newEvent.event_id,
+                        connector_id: conn.connector_id || conn.id,
+                        database: db,
+                        schema: 'public',
+                        table: tbl,
+                        operation: 'UPDATE',
+                        primary_key: newEvent.primary_key,
+                        actor: conn.username || "postgres",
+                        client_ip: conn.host,
+                        column_types: colTypeMap,
+                        before: newEvent.before_state,
+                        after: newEvent.after_state,
+                        changed_fields: changedFields,
+                        masked_fields: maskedFields,
+                        commit_timestamp: newEvent.commit_timestamp,
+                        capture_mode: conn.capture_mode || 'log_based'
+                      });
+                    }
+                  }
+                } else {
+                  // Detect INSERTs
+                  const eventId = genId("evt");
+                  const allKeys = Object.keys(currRow);
+                  const maskedFields = conn.enable_pii_masking ? allKeys.filter(k => PII_PATTERNS.some(p => k.toLowerCase().includes(p))) : [];
+
+                  const [newEvent] = await sql`
+                    INSERT INTO db_audit_events (
+                      id, event_id, org_id, connector_id, database_name, schema_name, table_name, operation,
+                      primary_key, before_state, after_state, changed_fields, masked_fields,
+                      column_types, actor, client_ip,
+                      commit_timestamp, capture_mode, record_hash
+                    ) VALUES (
+                      ${eventId}, ${eventId}, ${conn.org_id || null}, ${conn.connector_id || conn.id},
+                      ${db}, 'public', ${tbl}, 'INSERT',
+                      ${sql.json({ [priKey]: pk })},
+                      ${sql.json({})},
+                      ${sql.json(safeSerialize(currRow))},
+                      ${sql.json(allKeys)},
+                      ${sql.json(maskedFields)},
+                      ${sql.json(colTypeMap)},
+                      ${conn.username || "postgres"}, ${conn.host},
+                      now(), ${conn.capture_mode || 'log_based'}, ${genId("sha")}
+                    )
+                    RETURNING *
+                  `.catch(() => [null]);
+
+                  if (newEvent) {
+                    broadcastEvent({
+                      id: newEvent.event_id,
+                      event_id: newEvent.event_id,
+                      connector_id: conn.connector_id || conn.id,
+                      database: db,
+                      schema: 'public',
+                      table: tbl,
+                      operation: 'INSERT',
+                      primary_key: newEvent.primary_key,
+                      actor: conn.username || "postgres",
+                      client_ip: conn.host,
+                      column_types: colTypeMap,
+                      before: newEvent.before_state,
+                      after: newEvent.after_state,
+                      changed_fields: allKeys,
+                      masked_fields: maskedFields,
+                      commit_timestamp: newEvent.commit_timestamp,
+                      capture_mode: conn.capture_mode || 'log_based'
+                    });
+                  }
+                }
+              }
+
+              // Update snapshot
+              rowSnapshots.set(snapshotKey, currentMap);
+            } catch {}
+          }
+        } catch {
+          continue;
+        } finally {
+          if (dbClient) {
+            await dbClient.end({ timeout: 1 }).catch(() => {});
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[db-audit] PostgreSQL connector scan error (${conn.name}):`, err.message);
+      await sql`UPDATE db_audit_connectors SET status = 'error' WHERE id = ${conn.id} OR connector_id = ${conn.connector_id}`.catch(() => {});
+    }
+  };
 
   // ── TIDB / MYSQL / MARIADB EXTERNAL SCANNER ─────────────────────────────────
   const scanMysqlConnector = async (conn: any) => {
@@ -485,7 +877,9 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
 
       for (const conn of connectors) {
         const type = (conn.db_type || "").toLowerCase();
-        if (type === "tidb" || type === "mysql" || type === "mariadb") {
+        if (type === "postgresql" || type === "postgres") {
+          await scanPostgresConnector(conn);
+        } else if (type === "tidb" || type === "mysql" || type === "mariadb") {
           await scanMysqlConnector(conn);
         }
       }
@@ -655,9 +1049,15 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
       `;
 
       // Trigger immediate scan for this connector
-      if (db_type === "tidb" || db_type === "mysql" || db_type === "mariadb") {
+      if (db_type === "postgresql" || db_type === "postgres") {
+        scanPostgresConnector(newConn).catch(() => {});
+      } else if (db_type === "tidb" || db_type === "mysql" || db_type === "mariadb") {
         scanMysqlConnector(newConn).catch(() => {});
       }
+
+      // Publish to Redis channel for Go/Rust CDC consumers
+      redis.publish("cdc:connectors", JSON.stringify({ action: "upsert", connector: newConn })).catch(() => {});
+      redis.set(`cdc:connectors:${connectorId}`, JSON.stringify(newConn)).catch(() => {});
 
       return reply.send({ success: true, connector: newConn });
     } catch (err: any) {

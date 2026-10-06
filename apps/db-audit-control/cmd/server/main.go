@@ -135,40 +135,7 @@ func handleTestConnector(w http.ResponseWriter, r *http.Request) {
 
 var (
 	eventsMutex sync.Mutex
-	liveEvents  = []AuditEventResponse{
-		{
-			ID:              "evt_1001",
-			TenantID:        "00000000-0000-0000-0000-000000000001",
-			Database:        "loopzen",
-			Schema:          "public",
-			Table:           "users",
-			Operation:       "UPDATE",
-			PrimaryKey:      `{"id": 42}`,
-			Before:          `{"id": 42, "email": "alice@example.com", "role": "developer", "ssn": "***-**-****"}`,
-			After:           `{"id": 42, "email": "alice_admin@example.com", "role": "admin", "ssn": "***-**-****"}`,
-			ChangedFields:   []string{"email", "role"},
-			MaskedFields:    []string{"ssn"},
-			CommitTimestamp: time.Now().Add(-2 * time.Minute).Format(time.RFC3339),
-			RecordHash:      "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
-			CaptureMode:     "log_based",
-		},
-		{
-			ID:              "evt_1003",
-			TenantID:        "00000000-0000-0000-0000-000000000001",
-			Database:        "loopzen",
-			Schema:          "public",
-			Table:           "incidents",
-			Operation:       "DELETE",
-			PrimaryKey:      `{"id": "inc_n9y5umvj"}`,
-			Before:          `{"id": "inc_n9y5umvj", "pod_name": "payment-processor-85b4cd794b-m6b7d", "namespace": "billing", "reason": "OOMKilled", "severity": "critical", "status": "resolved"}`,
-			After:           "null",
-			ChangedFields:   []string{"id", "pod_name", "namespace", "reason", "severity", "status"},
-			MaskedFields:    []string{},
-			CommitTimestamp: time.Now().Add(-30 * time.Second).Format(time.RFC3339),
-			RecordHash:      "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08",
-			CaptureMode:     "log_based",
-		},
-	}
+	liveEvents  = []AuditEventResponse{}
 )
 
 func handleAuditEvents(w http.ResponseWriter, r *http.Request) {

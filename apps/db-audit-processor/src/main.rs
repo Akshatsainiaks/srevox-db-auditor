@@ -16,13 +16,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let clickhouse_url = env::var("CLICKHOUSE_URL").unwrap_or_else(|_| "http://localhost:8123".to_string());
     tracing::info!("ClickHouse Endpoint: {}", clickhouse_url);
 
-    // Initialize Native PostgreSQL CDC Stream Listener
-    let pg_host = env::var("POSTGRES_HOST").unwrap_or_else(|_| "16.16.75.48".to_string());
-    let pg_user = env::var("POSTGRES_USER").unwrap_or_else(|_| "loopzen".to_string());
-    let pg_pass = env::var("POSTGRES_PASSWORD").unwrap_or_else(|_| "loopzen_dev".to_string());
-    let pg_db = env::var("POSTGRES_DB").unwrap_or_else(|_| "loopzen".to_string());
+    // Initialize Native PostgreSQL CDC Stream Listener dynamically
+    let pg_host = env::var("POSTGRES_HOST").unwrap_or_default();
+    let pg_user = env::var("POSTGRES_USER").unwrap_or_else(|_| "srevox".to_string());
+    let pg_pass = env::var("POSTGRES_PASSWORD").unwrap_or_default();
+    let pg_db = env::var("POSTGRES_DB").unwrap_or_default();
+    let pg_port: u16 = env::var("POSTGRES_PORT").ok().and_then(|p| p.parse().ok()).unwrap_or(5432);
 
-    let _ = postgres_cdc::start_postgres_cdc_listener(&pg_host, 5432, &pg_user, &pg_pass, &pg_db).await;
+    if !pg_host.is_empty() {
+        let _ = postgres_cdc::start_postgres_cdc_listener(&pg_host, pg_port, &pg_user, &pg_pass, &pg_db).await;
+    } else {
+        tracing::info!("📡 Srevox CDC Processor initialized — awaiting dynamic connector registrations");
+    }
 
     // Sample Audit Event Normalization & Pipeline Test
     let mut event = AuditEvent {

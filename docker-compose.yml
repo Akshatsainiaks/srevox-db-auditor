@@ -1,5 +1,9 @@
 # ═══════════════════════════════════════════════════════════════
 #  Srevox DB Auditor — Standalone Docker Compose Stack
+#  https://github.com/Akshatsainiaks/srevox-db-auditor
+#
+#  Usage:
+#    curl -fsSL https://raw.githubusercontent.com/Akshatsainiaks/srevox-db-auditor/main/setup.sh | bash
 # ═══════════════════════════════════════════════════════════════
 
 services:
@@ -15,7 +19,7 @@ services:
       POSTGRES_USER:     ${POSTGRES_USER:-srevox}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-srevoxdbauditor}
     volumes:
-      - srevox_db_auditor_postgres_data:/var/lib/postgresql/data
+      - postgres_data:/var/lib/postgresql/data
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-srevox}"]
       interval: 10s
@@ -30,9 +34,9 @@ services:
     restart: unless-stopped
     command: redis-server --bind 0.0.0.0 --protected-mode no
     ports:
-      - "${REDIS_PORT:-7379}:6379"
+      - "${REDIS_PORT:-6379}:6379"
     volumes:
-      - srevox_db_auditor_redis_data:/data
+      - redis_data:/data
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 10s
@@ -42,7 +46,7 @@ services:
       - srevox-db-auditor
 
   api:
-    image: akshatsaini08/srevox-db-auditor-api:v0.0.2
+    image: akshatsaini08/srevox-db-auditor-api:v0.0.3
     build:
       context: ./apps/api
       dockerfile: Dockerfile
@@ -53,8 +57,37 @@ services:
     env_file: .env
     environment:
       PORT:              7001
-      API_PORT:          7001
-      POSTGRES_HOST:     ${POSTGRES_HOST:-postgres}
+      POSTGRES_HOST:     postgres
+      POSTGRES_PORT:     5432
+      POSTGRES_DB:       ${POSTGRES_DB:-srevoxdbauditor}
+      POSTGRES_USER:     ${POSTGRES_USER:-srevox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-srevoxdbauditor}
+      REDIS_URL:         redis://redis:6379
+      CLICKHOUSE_URL:    http://clickhouse:8123
+      ACTIVITY_SERVICE_URL: http://activity:7002
+      CONTROL_SERVICE_URL:  http://db-audit-control:7003
+      FRONTEND_URL:      ${FRONTEND_URL:-http://localhost:7005}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    networks:
+      - srevox-db-auditor
+
+  activity:
+    image: akshatsaini08/srevox-db-auditor-activity:v0.0.3
+    build:
+      context: ./apps/activity-service
+      dockerfile: Dockerfile
+    container_name: srevox-db-auditor-activity
+    restart: unless-stopped
+    ports:
+      - "${ACTIVITY_PORT:-7002}:7002"
+    env_file: .env
+    environment:
+      ACTIVITY_PORT:     7002
+      POSTGRES_HOST:     postgres
       POSTGRES_PORT:     5432
       POSTGRES_DB:       ${POSTGRES_DB:-srevoxdbauditor}
       POSTGRES_USER:     ${POSTGRES_USER:-srevox}
@@ -68,39 +101,17 @@ services:
     networks:
       - srevox-db-auditor
 
-  activity:
-    image: akshatsaini08/srevox-db-auditor-activity:v0.0.2
-    build:
-      context: ./apps/activity-service
-      dockerfile: Dockerfile
-    container_name: srevox-db-auditor-activity
-    restart: unless-stopped
-    ports:
-      - "${ACTIVITY_PORT:-7002}:7002"
-    env_file: .env
-    environment:
-      ACTIVITY_PORT:     7002
-      POSTGRES_HOST:     ${POSTGRES_HOST:-postgres}
-      POSTGRES_PORT:     5432
-      POSTGRES_DB:       ${POSTGRES_DB:-srevoxdbauditor}
-      POSTGRES_USER:     ${POSTGRES_USER:-srevox}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-srevoxdbauditor}
-    depends_on:
-      postgres:
-        condition: service_healthy
-    networks:
-      - srevox-db-auditor
-
   frontend:
-    image: akshatsaini08/srevox-db-auditor-frontend:v0.0.2
+    image: akshatsaini08/srevox-db-auditor-frontend:v0.0.3
     container_name: srevox-db-auditor-frontend
     restart: unless-stopped
     ports:
-      - "7005:7005"
+      - "${FRONTEND_PORT:-7005}:7005"
     env_file: .env
     environment:
-      PORT: 7005
-      API_URL: http://api:7001
+      PORT:              7005
+      API_URL:           http://api:7001
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:7001}
       ACTIVITY_SERVICE_URL: http://activity:7002
     depends_on:
       - api
@@ -112,53 +123,67 @@ services:
     container_name: srevox-db-auditor-clickhouse
     restart: unless-stopped
     ports:
-      - "7123:8123"
-      - "7900:9000"
+      - "${CLICKHOUSE_PORT:-8123}:8123"
     volumes:
-      - srevox_db_auditor_clickhouse_data:/var/lib/clickhouse
+      - clickhouse_data:/var/lib/clickhouse
     networks:
       - srevox-db-auditor
 
   db-audit-control:
-    image: akshatsaini08/srevox-db-auditor-control:v0.0.2
+    image: akshatsaini08/srevox-db-auditor-control:v0.0.3
     build:
       context: ./apps/db-audit-control
       dockerfile: Dockerfile
     container_name: srevox-db-auditor-control
     restart: unless-stopped
     ports:
-      - "7003:7003"
+      - "${CONTROL_PORT:-7003}:7003"
+    env_file: .env
     environment:
-      PORT: 7003
-      POSTGRES_HOST: postgres
-      CLICKHOUSE_URL: http://clickhouse:8123
+      PORT:              7003
+      POSTGRES_HOST:     postgres
+      POSTGRES_PORT:     5432
+      POSTGRES_DB:       ${POSTGRES_DB:-srevoxdbauditor}
+      POSTGRES_USER:     ${POSTGRES_USER:-srevox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-srevoxdbauditor}
+      REDIS_URL:         redis://redis:6379
+      CLICKHOUSE_URL:    http://clickhouse:8123
     depends_on:
-      - postgres
-      - clickhouse
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
     networks:
       - srevox-db-auditor
 
   db-audit-processor:
-    image: akshatsaini08/srevox-db-auditor-processor:v0.0.2
+    image: akshatsaini08/srevox-db-auditor-processor:v0.0.3
     build:
       context: ./apps/db-audit-processor
       dockerfile: Dockerfile
     container_name: srevox-db-auditor-processor
     restart: unless-stopped
     ports:
-      - "7004:7004"
+      - "${PROCESSOR_PORT:-7004}:7004"
+    env_file: .env
     environment:
-      PORT: 7004
-      CLICKHOUSE_URL: http://clickhouse:8123
+      PORT:              7004
+      POSTGRES_HOST:     postgres
+      POSTGRES_PORT:     5432
+      POSTGRES_DB:       ${POSTGRES_DB:-srevoxdbauditor}
+      POSTGRES_USER:     ${POSTGRES_USER:-srevox}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-srevoxdbauditor}
+      REDIS_URL:         redis://redis:6379
+      CLICKHOUSE_URL:    http://clickhouse:8123
     depends_on:
       - clickhouse
     networks:
       - srevox-db-auditor
 
 volumes:
-  srevox_db_auditor_postgres_data:
-  srevox_db_auditor_redis_data:
-  srevox_db_auditor_clickhouse_data:
+  postgres_data:
+  redis_data:
+  clickhouse_data:
 
 networks:
   srevox-db-auditor:

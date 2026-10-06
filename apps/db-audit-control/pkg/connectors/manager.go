@@ -27,42 +27,9 @@ type Manager struct {
 }
 
 func NewManager() *Manager {
-	m := &Manager{
+	return &Manager{
 		connectors: make(map[string]*Connector),
 	}
-
-	// Default sample connectors
-	m.connectors["conn_pg_prod"] = &Connector{
-		ID:              "conn_pg_prod",
-		TenantID:        "00000000-0000-0000-0000-000000000001",
-		ProjectID:       "proj_default",
-		Name:            "PostgreSQL Production DB",
-		DBType:          "postgresql",
-		CaptureMode:     "log_based",
-		Host:            "pg-prod.internal",
-		Port:            5432,
-		DatabaseName:    "production_db",
-		Status:          "active",
-		VaultSecretPath: "secret/data/audit/connectors/conn_pg_prod",
-		CreatedAt:       time.Now().Add(-24 * time.Hour),
-	}
-
-	m.connectors["conn_mysql_analytics"] = &Connector{
-		ID:              "conn_mysql_analytics",
-		TenantID:        "00000000-0000-0000-0000-000000000001",
-		ProjectID:       "proj_default",
-		Name:            "MySQL Analytics Cluster",
-		DBType:          "mysql",
-		CaptureMode:     "log_based",
-		Host:            "mysql-analytics.internal",
-		Port:            3306,
-		DatabaseName:    "analytics_db",
-		Status:          "active",
-		VaultSecretPath: "secret/data/audit/connectors/conn_mysql_analytics",
-		CreatedAt:       time.Now().Add(-12 * time.Hour),
-	}
-
-	return m
 }
 
 func (m *Manager) ListConnectors() []*Connector {

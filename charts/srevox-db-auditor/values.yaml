@@ -14,13 +14,13 @@ image:
   pullPolicy: IfNotPresent
   registry: docker.io
   repositoryOwner: akshatsaini08
-  tag: 0.0.2
+  tag: 0.0.3
 
 # ── API Backend Service ──────────────────────────────────────
 api:
   replicaCount: 1
   port: 7001
-  image: akshatsaini08/srevox-db-auditor-api:0.0.2
+  image: akshatsaini08/srevox-db-auditor-api:0.0.3
   resources:
     limits:
       cpu: 500m
@@ -33,7 +33,7 @@ api:
 frontend:
   replicaCount: 1
   port: 7005
-  image: akshatsaini08/srevox-db-auditor-frontend:0.0.2
+  image: akshatsaini08/srevox-db-auditor-frontend:0.0.3
   service:
     type: ClusterIP
     port: 7005
@@ -49,7 +49,7 @@ frontend:
 activity:
   replicaCount: 1
   port: 7002
-  image: akshatsaini08/srevox-db-auditor-activity:0.0.2
+  image: akshatsaini08/srevox-db-auditor-activity:0.0.3
   resources:
     limits:
       cpu: 300m
