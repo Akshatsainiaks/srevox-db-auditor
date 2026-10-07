@@ -134,7 +134,14 @@ export default function ConnectorModal({ onClose, onConnectorCreated }: Connecto
     setTestResult(null);
 
     try {
-      const res = await testDbAuditConnector({ host, port: Number(port), db_type: dbType });
+      const res = await testDbAuditConnector({
+        host,
+        port: Number(port),
+        db_type: dbType,
+        username: username || (dbType === "tidb" || dbType === "mysql" ? "root" : "postgres"),
+        password,
+        database_name: databaseName
+      });
       setTestResult({
         success: res.success ?? true,
         message: res.message || `Connection verified to ${databaseName} on ${host}:${port}`,

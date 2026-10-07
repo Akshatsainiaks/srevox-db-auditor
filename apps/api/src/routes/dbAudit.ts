@@ -6,6 +6,39 @@ import redis from "../db/redis.js";
 import { genId } from "../utils/id.js";
 import sql from "../db/sql.js";
 
+const AUTOMATED_ROUTINE_COLUMNS = new Set([
+  "last_heartbeat_at",
+  "last_seen_at",
+  "last_seen",
+  "heartbeat",
+  "heartbeat_at",
+  "ping_at",
+  "last_ping",
+  "last_ping_at",
+  "top_cpu_processes",
+  "top_mem_processes",
+  "cpu_usage",
+  "memory_usage",
+  "disk_usage",
+  "system_metrics",
+  "health_check_at",
+  "uptime",
+  "uptime_seconds"
+]);
+
+function isAutomatedHeartbeatUpdate(changedFields: string[]): boolean {
+  if (!changedFields || changedFields.length === 0) return true;
+  const nonRoutineFields = changedFields.filter(f => {
+    const lower = String(f).toLowerCase().trim();
+    if (AUTOMATED_ROUTINE_COLUMNS.has(lower)) return false;
+    if (lower === "updated_at" && changedFields.some(c => AUTOMATED_ROUTINE_COLUMNS.has(String(c).toLowerCase().trim()))) {
+      return false;
+    }
+    return true;
+  });
+  return nonRoutineFields.length === 0;
+}
+
 const SREVOX_INTERNAL_TABLES = new Set([
   "db_audit_events",
   "db_audit_connectors",
@@ -404,6 +437,11 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
                   }
 
                   if (changedFields.length > 0) {
+                    // In manual_only mode, skip routine automated heartbeat & telemetry updates
+                    if (conn.capture_mode === "manual_only" && isAutomatedHeartbeatUpdate(changedFields)) {
+                      continue;
+                    }
+
                     const eventId = genId("evt");
                     const [newEvent] = await sql`
                       INSERT INTO db_audit_events (
@@ -624,7 +662,7 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
                     record_hash, capture_mode, commit_timestamp
                   ) VALUES (
                     ${eventId}, ${eventId}, ${conn.org_id || null}, ${conn.connector_id || conn.id},
-                    ${db}, ${db}, ${tbl}, 'DDL_CHANGE',
+                    ${db}, 'default', ${tbl}, 'DDL_CHANGE',
                     ${sql.json({ primary_key: priKey })},
                     ${sql.json(currentTypes)},
                     ${conn.username || "admin"}, ${conn.host},
@@ -702,7 +740,7 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
                     commit_timestamp, capture_mode, record_hash
                   ) VALUES (
                     ${eventId}, ${eventId}, ${conn.org_id || null}, ${conn.connector_id || conn.id},
-                    ${db}, ${db}, ${tbl}, 'DELETE',
+                    ${db}, 'default', ${tbl}, 'DELETE',
                     ${sql.json({ [priKey]: pk })},
                     ${sql.json(safeSerialize(prevRow))},
                     ${sql.json({})},
@@ -766,7 +804,7 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
                       commit_timestamp, capture_mode, record_hash
                     ) VALUES (
                       ${eventId}, ${eventId}, ${conn.org_id || null}, ${conn.connector_id || conn.id},
-                      ${db}, ${db}, ${tbl}, 'UPDATE',
+                      ${db}, 'default', ${tbl}, 'UPDATE',
                       ${sql.json({ [priKey]: pk })},
                       ${sql.json(safeSerialize(prevRow))},
                       ${sql.json(safeSerialize(currRow))},
@@ -815,7 +853,7 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
                     commit_timestamp, capture_mode, record_hash
                   ) VALUES (
                     ${eventId}, ${eventId}, ${conn.org_id || null}, ${conn.connector_id || conn.id},
-                    ${db}, ${db}, ${tbl}, 'INSERT',
+                    ${db}, 'default', ${tbl}, 'INSERT',
                     ${sql.json({ [priKey]: pk })},
                     ${sql.json({})},
                     ${sql.json(safeSerialize(currRow))},
@@ -1084,17 +1122,30 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
 
       // Trigger immediate scan for this connector
       const connWithSecret = { ...newConn, password };
-      if (db_type === "postgresql" || db_type === "postgres") {
-        scanPostgresConnector(connWithSecret).catch(() => {});
-      } else if (db_type === "tidb" || db_type === "mysql" || db_type === "mariadb") {
-        scanMysqlConnector(connWithSecret).catch(() => {});
+      const normalizedType = (db_type || "").toLowerCase();
+      try {
+        if (["postgresql", "postgres", "neon", "supabase", "cockroachdb", "timescaledb"].includes(normalizedType)) {
+          await scanPostgresConnector(connWithSecret);
+        } else if (["tidb", "mysql", "mariadb", "oceanbase", "planetscale", "singlestore"].includes(normalizedType)) {
+          await scanMysqlConnector(connWithSecret);
+        }
+      } catch (scanErr: any) {
+        console.warn("[db-audit] Initial table discovery scan warning:", scanErr.message);
       }
 
-      // Publish to Redis channel for Go/Rust CDC consumers
-      redis.publish("cdc:connectors", JSON.stringify({ action: "upsert", connector: newConn })).catch(() => {});
-      redis.set(`cdc:connectors:${connectorId}`, JSON.stringify(newConn)).catch(() => {});
+      // Fetch the updated connector with table_count and monitored_tables
+      const [finalConn] = await sql`
+        SELECT connector_id, org_id, name, db_type, capture_mode, host, port, database_name, username, status, audit_scope, target_tables, enable_pii_masking, table_count, monitored_tables, last_sync_at, created_at
+        FROM db_audit_connectors
+        WHERE id = ${newConn.id || connectorId} OR connector_id = ${connectorId}
+        LIMIT 1
+      `.catch(() => [newConn]);
 
-      return reply.send({ success: true, connector: newConn });
+      // Publish to Redis channel for Go/Rust CDC consumers
+      redis.publish("cdc:connectors", JSON.stringify({ action: "upsert", connector: finalConn || newConn })).catch(() => {});
+      redis.set(`cdc:connectors:${connectorId}`, JSON.stringify(finalConn || newConn)).catch(() => {});
+
+      return reply.send({ success: true, connector: finalConn || newConn });
     } catch (err: any) {
       return reply.status(500).send({ error: err.message });
     }
@@ -1122,7 +1173,21 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
   // ── ROUTE: POST /api/db-audit/connectors/test — Test connectivity ────────────
   app.post("/connectors/test", async (req, reply) => {
     const body = req.body as any;
-    const { host, port, db_type, username, password, database_name } = body;
+    const { host, port, db_type, username, database_name } = body;
+    let password = body.password;
+
+    // If password not provided in test payload, lookup saved password for existing connector
+    if (!password && (body.connector_id || body.id)) {
+      const connId = body.connector_id || body.id;
+      const [saved] = await sql`
+        SELECT password FROM db_audit_connectors 
+        WHERE id = ${connId} OR connector_id = ${connId} 
+        LIMIT 1
+      `.catch(() => [null]);
+      if (saved?.password) {
+        password = saved.password;
+      }
+    }
 
     if (!host || !port) {
       return reply.status(400).send({ success: false, message: "Missing host or port for connection test" });
@@ -1406,6 +1471,7 @@ export default async function dbAuditRoutes(app: FastifyInstance) {
           ${operation && operation !== "all" ? sql`AND operation = ${operation}` : sql``}
           ${table && table !== "all" ? sql`AND table_name = ${table}` : sql``}
           AND table_name != ALL(${internalList})
+          ${(req.query as any)?.capture_mode === 'manual_only' ? sql`AND NOT (changed_fields ?| ARRAY['last_heartbeat_at', 'last_seen_at', 'top_cpu_processes', 'top_mem_processes'])` : sql``}
         ORDER BY commit_timestamp DESC 
         LIMIT ${Math.min(Number(limit) || 500, 2000)}
       `;

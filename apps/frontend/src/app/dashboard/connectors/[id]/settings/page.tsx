@@ -206,7 +206,7 @@ export default function DatabaseSettingsPage() {
         username
       });
 
-      const pingRes = await testDbAuditConnector({ host, port: Number(port), db_type: connector?.db_type, database: databaseName });
+      const pingRes = await testDbAuditConnector({ connector_id: id, host, port: Number(port), db_type: connector?.db_type, database: databaseName, username });
       const isSuccess = pingRes?.success !== false && (pingRes?.success === true || pingRes?.data?.success === true || pingRes?.status === 200 || !pingRes?.error);
       const lat = pingRes?.latencyMs || 1.2;
 

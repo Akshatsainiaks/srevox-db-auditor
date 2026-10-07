@@ -90,6 +90,35 @@ function parseFieldArray(val: any): string[] {
   return [String(val)];
 }
 
+const AUTOMATED_ROUTINE_COLUMNS = new Set([
+  "last_heartbeat_at",
+  "last_seen_at",
+  "last_seen",
+  "heartbeat",
+  "heartbeat_at",
+  "ping_at",
+  "last_ping",
+  "last_ping_at",
+  "top_cpu_processes",
+  "top_mem_processes",
+  "cpu_usage",
+  "memory_usage",
+  "disk_usage",
+  "system_metrics",
+  "health_check_at",
+  "uptime",
+  "uptime_seconds"
+]);
+
+function isAutomatedHeartbeat(fields: any): boolean {
+  const arr = Array.isArray(fields) ? fields : typeof fields === "string" ? [fields] : [];
+  if (arr.length === 0) return false;
+  return arr.every((f: string) => {
+    const lower = String(f).toLowerCase().trim();
+    return AUTOMATED_ROUTINE_COLUMNS.has(lower) || (lower === "updated_at" && arr.some(c => AUTOMATED_ROUTINE_COLUMNS.has(String(c).toLowerCase().trim())));
+  });
+}
+
 interface ConnectorDetailProps {
   params: Promise<{ id: string }>;
 }
@@ -210,12 +239,12 @@ export default function ConnectorDetailPage({ params }: ConnectorDetailProps) {
     setTestingPing(true);
     try {
       const res = await testDbAuditConnector({
+        connector_id: connector.connector_id || connector.id || id,
         host: connector.host,
         port: connector.port,
         db_type: connector.db_type,
         database_name: connector.database_name || connector.database,
-        username: connector.username,
-        password: connector.password
+        username: connector.username
       });
 
       const msg = res?.message || `Handshake to ${connector.host}:${connector.port} succeeded`;
@@ -353,6 +382,11 @@ export default function ConnectorDetailPage({ params }: ConnectorDetailProps) {
   const dbEvents = events.filter((ev) => {
     if (!ev || !ev.table) return false;
     if (SREVOX_INTERNAL_TABLES.has(ev.table.toLowerCase())) return false;
+
+    // In Manual Only mode, hide automated routine heartbeat and telemetry events
+    if (connector.capture_mode === "manual_only" && ev.operation === "UPDATE" && isAutomatedHeartbeat(ev.changed_fields)) {
+      return false;
+    }
 
     if (ev.connector_id && (ev.connector_id === connector.id || ev.connector_id === connector.connector_id)) {
       return true;
@@ -712,7 +746,22 @@ export default function ConnectorDetailPage({ params }: ConnectorDetailProps) {
                         <div className="min-w-0 space-y-1">
                           <div className="flex items-center gap-2 flex-wrap">
                             <span className="font-bold text-xs text-gray-900 dark:text-white font-mono">
-                              {ev.database}.{ev.schema || "public"}.{ev.table}
+                              {(() => {
+                                const parts: string[] = [];
+                                if (ev.database && ev.database !== "*") parts.push(ev.database);
+                                if (ev.schema && ev.schema !== "public" && ev.schema !== "default" && ev.schema !== ev.database) {
+                                  parts.push(ev.schema);
+                                }
+                                let cleanTbl = ev.table || "";
+                                if (ev.database && cleanTbl.startsWith(`${ev.database}.`)) {
+                                  cleanTbl = cleanTbl.slice(ev.database.length + 1);
+                                }
+                                if (ev.schema && cleanTbl.startsWith(`${ev.schema}.`)) {
+                                  cleanTbl = cleanTbl.slice(ev.schema.length + 1);
+                                }
+                                parts.push(cleanTbl);
+                                return parts.filter(Boolean).join(".");
+                              })()}
                             </span>
                             {/* Actor / Executing User Attribution */}
                             <span className="inline-flex items-center gap-1 text-[10px] font-mono font-medium px-2 py-0.5 rounded bg-indigo-50 dark:bg-indigo-500/10 text-indigo-600 dark:text-indigo-400 border border-indigo-200/50 dark:border-indigo-500/20">
@@ -724,7 +773,7 @@ export default function ConnectorDetailPage({ params }: ConnectorDetailProps) {
                           <div className="flex items-center gap-2 text-[11px] text-gray-400 dark:text-slate-500 flex-wrap">
                             {effectiveChangedCols.length > 0 ? (
                               <span className="text-amber-600 dark:text-amber-400 font-mono">
-                                Modified: {effectiveChangedCols.join(", ")}
+                                {ev.operation === "INSERT" ? "Columns: " : ev.operation === "DELETE" ? "Deleted: " : "Modified: "} {effectiveChangedCols.join(", ")}
                               </span>
                             ) : (
                               <span>Row mutation captured</span>

@@ -122,6 +122,30 @@ interface VelocityData {
   buckets: Array<{ time: string; count: number; inserts: number; updates: number; deletes: number }>;
 }
 
+const ROUTINE_HEARTBEAT_COLS = new Set([
+  "last_heartbeat_at",
+  "last_seen_at",
+  "last_seen",
+  "heartbeat",
+  "heartbeat_at",
+  "ping_at",
+  "last_ping",
+  "last_ping_at",
+  "top_cpu_processes",
+  "top_mem_processes"
+]);
+
+function isRoutineEvent(ev: any): boolean {
+  if (ev.operation !== "UPDATE") return false;
+  const fields = ev.changed_fields;
+  const arr = Array.isArray(fields) ? fields : typeof fields === "string" ? [fields] : [];
+  if (arr.length === 0) return false;
+  return arr.every((f: string) => {
+    const l = String(f).toLowerCase().trim();
+    return ROUTINE_HEARTBEAT_COLS.has(l) || l === "updated_at";
+  });
+}
+
 export default function DashboardPage() {
   const { success } = useToast();
   const router = useRouter();
@@ -593,7 +617,7 @@ export default function DashboardPage() {
                 </div>
               ) : (
                 <div className="divide-y divide-gray-50 dark:divide-slate-800/50">
-                  {events.slice(0, 5).map((ev) => {
+                  {events.filter(ev => !isRoutineEvent(ev)).slice(0, 5).map((ev) => {
                     const icon = DB_ICONS[ev.database?.toLowerCase()] || "🐘";
                     const isInsert = ev.operation === "INSERT";
                     const isUpdate = ev.operation === "UPDATE";
@@ -610,7 +634,19 @@ export default function DashboardPage() {
                           <div className="min-w-0">
                             <div className="flex items-center gap-2">
                               <span className="font-semibold text-xs text-gray-900 dark:text-slate-100 truncate">
-                                {ev.schema}.{ev.table}
+                                {(() => {
+                                  const parts: string[] = [];
+                                  if (ev.database && ev.database !== "*") parts.push(ev.database);
+                                  if (ev.schema && ev.schema !== "public" && ev.schema !== "default" && ev.schema !== ev.database) {
+                                    parts.push(ev.schema);
+                                  }
+                                  let cleanTbl = ev.table || "";
+                                  if (ev.database && cleanTbl.startsWith(`${ev.database}.`)) {
+                                    cleanTbl = cleanTbl.slice(ev.database.length + 1);
+                                  }
+                                  parts.push(cleanTbl);
+                                  return parts.filter(Boolean).join(".");
+                                })()}
                               </span>
                               <span className={cn(
                                 "text-[9px] font-black px-1.5 py-0.5 rounded-md uppercase tracking-wide",

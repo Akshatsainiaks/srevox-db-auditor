@@ -2,8 +2,8 @@ apiVersion: v2
 name: srevox-db-auditor
 description: Srevox DB Auditor - Enterprise Database Audit & Change Intelligence Platform
 type: application
-version: 0.0.4
-appVersion: 0.0.4
+version: 0.0.5
+appVersion: 0.0.5
 keywords:
   - sre
   - observability
